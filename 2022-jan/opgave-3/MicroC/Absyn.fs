@@ -14,6 +14,7 @@ type typ =
   | TypP of typ                      (* Pointer type                *)
                                                                    
 and expr =                                                         
+  | Within of expr * expr * expr
   | Access of access                 (* x    or  *p    or  a[e]     *)
   | Assign of access * expr          (* x=e  or  *p=e  or  a[e]=e   *)
   | Addr of access                   (* &x   or  &*p   or  &a[e]    *)

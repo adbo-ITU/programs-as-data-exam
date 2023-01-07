@@ -16,6 +16,7 @@ let lexemeAsString lexbuf =
 
 let keyword s =
     match s with
+    | "within"  -> WITHIN
     | "char"    -> CHAR 
     | "else"    -> ELSE
     | "false"   -> CSTBOOL 0

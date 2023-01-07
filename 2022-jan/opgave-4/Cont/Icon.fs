@@ -35,6 +35,7 @@ type expr =
   | Or  of expr * expr
   | Seq of expr * expr
   | Every of expr 
+  | Random of int * int * int
   | Fail;;
 
 (* Runtime values and runtime continuations *)
@@ -53,6 +54,10 @@ let write v =
     match v with 
     | Int i -> printf "%d " i
     | Str s -> printf "%s " s;;
+
+let random = new System.Random();
+let randomNext(min, max) =
+    random.Next(min,max+1) // max is exclusive in Next.
 
 (* Expression evaluation with backtracking *)
 
@@ -90,6 +95,15 @@ let rec eval (e : expr) (cont : cont) (econt : econt) =
           econt
     | And(e1, e2) -> 
       eval e1 (fun _ -> fun econt1 -> eval e2 cont econt1) econt
+    | Random(min, max, num) ->
+      let rec generateRandoms i =
+          if i <= num then
+              let rand = randomNext(min, max)
+              cont (Int rand) (fun () -> generateRandoms (i+1))
+          else
+              econt ()
+
+      generateRandoms 1
     | Or(e1, e2) -> 
       eval e1 cont (fun () -> eval e2 cont econt)
     | Seq(e1, e2) -> 

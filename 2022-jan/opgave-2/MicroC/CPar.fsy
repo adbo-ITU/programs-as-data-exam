@@ -15,6 +15,7 @@ let nl = CstI 10
 %token <string> CSTSTRING NAME
 
 %token CHAR ELSE IF INT NULL PRINT PRINTLN RETURN VOID WHILE
+%token PRINTSTACK
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NE GT LT GE LE
 %token NOT SEQOR SEQAND
@@ -95,6 +96,7 @@ Stmt:
 
 StmtM:  /* No unbalanced if-else */
     Expr SEMI                           { Expr($1)             }
+  | PRINTSTACK Expr SEMI                { PrintStack $2        }
   | RETURN SEMI                         { Return None          }
   | RETURN Expr SEMI                    { Return(Some($2))     }
   | Block                               { $1                   }

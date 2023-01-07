@@ -35,7 +35,8 @@ class Machine {
     GOTO = 16, IFZERO = 17, IFNZRO = 18, CALL = 19, TCALL = 20, RET = 21, 
     PRINTI = 22, PRINTC = 23, 
     LDARGS = 24,
-    STOP = 25;
+    STOP = 25,
+    PRINTSTACK = 26;
 
   final static int STACKSIZE = 1000;
   
@@ -127,6 +128,10 @@ class Machine {
         System.out.print(s[sp] + " "); break; 
       case PRINTC:
         System.out.print((char)(s[sp])); break; 
+      case PRINTSTACK:
+        int v = s[sp--];
+        printStack(v, s, bp, sp);
+        break;
       case LDARGS:
 	for (int i=0; i<iargs.length; i++) // Push commandline arguments
 	  s[++sp] = iargs[i];
@@ -137,6 +142,31 @@ class Machine {
         throw new RuntimeException("Illegal instruction " + p[pc-1] 
                                    + " at address " + (pc-1));
       }
+    }
+  }
+
+  static void printStack(int v, int s[], int bp, int sp) {
+    System.out.format("-Print Stack %d----------------%n", v);
+
+    // Iterate over all stack frames
+    while (bp != -999) {
+      // Print current stack frame
+      System.out.println("Stack Frame");
+      for (int i = sp; i >= bp; i--) {
+        System.out.format(" s[%d]: Local/Temp = %d%n", i, s[i]);
+      }
+      System.out.format(" s[%d]: bp = %d%n", bp - 1, s[bp - 1]);
+      System.out.format(" s[%d]: ret = %d%n", bp - 2, s[bp - 2]);
+
+      // Move to next stack frame
+      sp = bp - 3;
+      bp = s[bp - 1];
+    }
+
+    // Print remaining items on the stack: global variables
+    System.out.println("Global");
+    for (int i = sp; i >= 0; i--) {
+      System.out.format(" s[%d]: %d%n", i, s[i]);
     }
   }
 
@@ -170,6 +200,7 @@ class Machine {
     case PRINTC: return "PRINTC";
     case LDARGS: return "LDARGS";
     case STOP:   return "STOP";
+    case PRINTSTACK: return "PRINTSTACK";
     default:     return "<unknown>";
     }
   }

@@ -81,7 +81,7 @@ created when allocating all but the last word of a free block.
   #define PPCOMP "Not compiled with gcc."
 #endif
 
-#if _WIN64 || __x86_64__ || __ppc64__
+#if _WIN64 || __x86_64__ || __ppc64__ || __aarch64__
   #define ENV64
   #define PPARCH "64 bit architecture."
 #else
@@ -151,6 +151,7 @@ word* readfile(char* filename);
 #endif
 
 #define CONSTAG 0
+#define TABLETAG 1
 
 // Heap size in words
 
@@ -195,6 +196,10 @@ word *freelist;
 #define CDR 29
 #define SETCAR 30
 #define SETCDR 31
+#define CREATETABLE 32
+#define UPDATETABLE 33
+#define INDEXTABLE 34
+#define PRINTTABLE 35
 
 #define STACKSIZE 1000
 
@@ -237,6 +242,10 @@ void printInstruction(word p[], word pc) {
   case CDR:    printf("CDR"); break;
   case SETCAR: printf("SETCAR"); break;
   case SETCDR: printf("SETCDR"); break;
+  case CREATETABLE: printf("CREATETABLE"); break;
+  case UPDATETABLE: printf("UPDATETABLE"); break;
+  case INDEXTABLE: printf("INDEXTABLE"); break;
+  case PRINTTABLE: printf("PRINTTABLE"); break;
   default:     printf("<unknown>"); break;
   }
 }
@@ -379,6 +388,63 @@ int execcode(word p[], word s[], word iargs[], int iargc, int /* boolean */ trac
       word* p = (word*)s[sp];
       p[2] = v;
     } break;
+
+    case CREATETABLE: {
+      word N = Untag((word) s[sp--]);
+
+      if (N < 0) {
+        printf("Cannot create table with negative size\n");
+        return -1;
+      }
+
+      word* t = allocate(TABLETAG, N + 1, s, sp);
+
+      t[1] = N;
+      for (int i = 2; i <= N + 1; i++) {
+        t[i] = 0;
+      }
+
+      s[++sp] = (word) t;
+    } break;
+
+    case UPDATETABLE: {
+      word v = Untag((word) s[sp--]);
+      word i = Untag((word) s[sp--]);
+      word* t = (word*) s[sp];
+      word N = t[1];
+
+      if (i < 0 || i >= N) {
+        printf("Index %lld out of bounds\n", i);
+        return -1;
+      }
+
+      t[i + 2] = v;
+    } break;
+
+    case INDEXTABLE: {
+      word i = Untag((word) s[sp--]);
+      word* t = (word*) s[sp--];
+      word N = t[1];
+
+      if (i < 0 || i >= N) {
+        printf("Index %lld out of bounds\n", i);
+        return -1;
+      }
+
+      s[++sp] = Tag(t[i + 2]);
+    } break;
+    case PRINTTABLE: {
+      word* t = (word*) s[sp];
+      word N = t[1];
+
+      printf("[");
+      for (int i = 2; i < N + 1; i++)
+        printf("%lld, ", t[i]);
+      if (N > 0)
+        printf("%lld", t[N + 1]);
+      printf("]\n");
+    } break;
+
     default:
       printf("Illegal instruction " WORD_FMT " at address " WORD_FMT "\n",
 	     p[pc - 1], pc - 1);

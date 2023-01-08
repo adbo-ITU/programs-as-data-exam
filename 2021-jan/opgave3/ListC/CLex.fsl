@@ -32,6 +32,10 @@ let keyword s =
     | "return"  -> RETURN
     | "setcar"  -> SETCAR
     | "setcdr"  -> SETCDR     
+    | "createTable" -> CREATETABLE
+    | "updateTable" -> UPDATETABLE
+    | "indexTable" -> INDEXTABLE
+    | "printTable" -> PRINTTABLE
     | "true"    -> CSTBOOL 1
     | "void"    -> VOID 
     | "while"   -> WHILE         

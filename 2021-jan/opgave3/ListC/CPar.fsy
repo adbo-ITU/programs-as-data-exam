@@ -15,6 +15,7 @@ let nl = CstI 10
 %token <string> CSTSTRING NAME
 
 %token CHAR ELSE IF INT NULL PRINT PRINTLN RETURN VOID WHILE
+%token CREATETABLE UPDATETABLE INDEXTABLE PRINTTABLE
 %token NIL CONS CAR CDR DYNAMIC SETCAR SETCDR
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NE GT LT GE LE
@@ -146,6 +147,10 @@ AtExprNotAccess:
   | CDR LPAR Expr RPAR                  { Prim1("cdr", $3)      }
   | SETCAR LPAR Expr COMMA Expr RPAR    { Prim2("setcar",$3,$5) }
   | SETCDR LPAR Expr COMMA Expr RPAR    { Prim2("setcdr",$3,$5) }
+  | CREATETABLE LPAR Expr RPAR                       { Prim1("createTable", $3)         }
+  | UPDATETABLE LPAR Expr COMMA Expr COMMA Expr RPAR { Prim3("updateTable", $3, $5, $7) }
+  | INDEXTABLE LPAR Expr COMMA Expr RPAR             { Prim2("indexTable", $3, $5)      }
+  | PRINTTABLE LPAR Expr RPAR                        { Prim1("printTable", $3)          }
 ;
 
 Access:

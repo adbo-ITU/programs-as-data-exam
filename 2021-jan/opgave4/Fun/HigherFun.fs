@@ -29,11 +29,13 @@ let rec lookup env x =
 
 type value = 
   | Int of int
+  | Double of double
   | Closure of string * string * expr * value env       (* (f, x, fBody, fDeclEnv) *)
 
 let rec eval (e : expr) (env : value env) : value =
     match e with
     | CstI i -> Int i
+    | CstD d -> Double d
     | CstB b -> Int (if b then 1 else 0)
     | Var x  -> lookup env x
     | Prim(ope, e1, e2) -> 
@@ -45,6 +47,11 @@ let rec eval (e : expr) (env : value env) : value =
       | ("-", Int i1, Int i2) -> Int (i1 - i2)
       | ("=", Int i1, Int i2) -> Int (if i1 = i2 then 1 else 0)
       | ("<", Int i1, Int i2) -> Int (if i1 < i2 then 1 else 0)
+      | ("*", Double d1, Double d2) -> Double (d1 * d2)
+      | ("+", Double d1, Double d2) -> Double (d1 + d2)
+      | ("-", Double d1, Double d2) -> Double (d1 - d2)
+      | ("=", Double d1, Double d2) -> Int (if d1 = d2 then 1 else 0)
+      | ("<", Double d1, Double d2) -> Int (if d1 < d2 then 1 else 0)
       |  _ -> failwith "unknown primitive or wrong type"
     | Let(x, eRhs, letBody) -> 
       let xVal = eval eRhs env

@@ -47,6 +47,12 @@ type instr =
   | CDR                                (* get second field of cons cell   *)
   | SETCAR                             (* set first field of cons cell    *)
   | SETCDR                             (* set second field of cons cell   *)
+  | CREATETABLE
+  | UPDATETABLE
+  | INDEXTABLE
+  | PRINTTABLE
+
+
 
 (* Generate new distinct labels *)
 
@@ -103,6 +109,10 @@ let CODECAR    = 28;
 let CODECDR    = 29;
 let CODESETCAR = 30;
 let CODESETCDR = 31;
+let CODECREATETABLE = 32
+let CODEUPDATETABLE = 33
+let CODEINDEXTABLE = 34
+let CODEPRINTTABLE = 35
 
 (* Bytecode emission, first pass: build environment that maps 
    each label to an integer address in the bytecode.
@@ -143,6 +153,10 @@ let makelabenv (addr, labenv) instr =
     | CDR            -> (addr+1, labenv)
     | SETCAR         -> (addr+1, labenv)
     | SETCDR         -> (addr+1, labenv)
+    | CREATETABLE    -> (addr+1, labenv)
+    | UPDATETABLE    -> (addr+1, labenv)
+    | INDEXTABLE     -> (addr+1, labenv)
+    | PRINTTABLE     -> (addr+1, labenv)
 
 (* Bytecode emission, second pass: output bytecode as integers *)
 
@@ -181,6 +195,10 @@ let rec emitints getlab instr ints =
     | CDR            -> CODECDR    :: ints
     | SETCAR         -> CODESETCAR :: ints
     | SETCDR         -> CODESETCDR :: ints
+    | CREATETABLE    -> CODECREATETABLE :: ints
+    | UPDATETABLE    -> CODEUPDATETABLE :: ints
+    | INDEXTABLE     -> CODEINDEXTABLE :: ints
+    | PRINTTABLE     -> CODEPRINTTABLE :: ints
 
 
 (* Convert instruction list to int list in two passes:

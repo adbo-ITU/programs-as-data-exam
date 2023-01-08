@@ -9,6 +9,7 @@ type expr =
   | Var of string
   | Let of string * expr * expr
   | Prim of string * expr * expr
+  | Prim1 of string * expr
   | If of expr * expr * expr
   | Letfun of string * string * expr * expr    (* (f, x, fBody, letBody) *)
   | Call of expr * expr

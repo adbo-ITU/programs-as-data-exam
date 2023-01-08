@@ -53,6 +53,12 @@ let rec eval (e : expr) (env : value env) : value =
       | ("=", Double d1, Double d2) -> Int (if d1 = d2 then 1 else 0)
       | ("<", Double d1, Double d2) -> Int (if d1 < d2 then 1 else 0)
       |  _ -> failwith "unknown primitive or wrong type"
+    | Prim1(ope, e) ->
+      let v = eval e env
+      match (ope, v) with
+      | ("toInt", Double d) -> Int (int d)
+      | ("toDouble", Int i) -> Double (double i)
+      |  _ -> failwith "unknown unary primitive or wrong type"
     | Let(x, eRhs, letBody) -> 
       let xVal = eval eRhs env
       let letEnv = (x, xVal) :: env 

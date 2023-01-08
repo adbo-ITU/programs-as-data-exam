@@ -4,6 +4,7 @@ module Absyn
 
 type expr = 
   | CstI of int
+  | CstD of double
   | CstB of bool
   | Var of string
   | Let of string * expr * expr

@@ -11,7 +11,10 @@ let _ = if args.Length > 1 then
                            else source
            let target = stem + ".out"
            printf "Compiling %s to %s\n" source target;
-           try ignore (Comp.compileToFile (Parse.fromFile source) target)
+           try
+                let s = Parse.fromFile source
+                printfn "Parsed: %A" s
+                ignore (Comp.compileToFile (s) target)
            with Failure msg -> printf "ERROR: %s\n" msg
         else
            printf "Usage: listcc <source file>\n";;

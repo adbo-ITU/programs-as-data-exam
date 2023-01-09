@@ -14,19 +14,21 @@
 %token ELSE END FALSE IF IN LET NOT THEN TRUE
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NE GT LT GE LE
-%token LPAR RPAR 
+%token LPAR RPAR
+%token LBRACK RBRACK COMMA AT
 %token EOF
 
 %left ELSE              /* lowest precedence  */
 %left EQ NE 
 %left GT LT GE LE
-%left PLUS MINUS
+%left PLUS MINUS AT
 %left TIMES DIV MOD 
 %nonassoc NOT           /* highest precedence  */
 
 %start Main
 %type <Absyn.expr> Main Expr AtExpr Const
 %type <Absyn.expr> AppExpr
+%type <Absyn.expr list> ListItems
 
 %%
 
@@ -50,6 +52,7 @@ Expr:
   | Expr LT    Expr                     { Prim("<",  $1, $3)     }
   | Expr GE    Expr                     { Prim(">=", $1, $3)     }
   | Expr LE    Expr                     { Prim("<=", $1, $3)     }
+  | Expr AT    Expr                     { Prim("@",  $1, $3)     }
 ;
 
 AtExpr:
@@ -57,7 +60,13 @@ AtExpr:
   | NAME                                { Var $1                 }
   | LET NAME EQ Expr IN Expr END        { Let($2, $4, $6)        }
   | LET NAME NAME EQ Expr IN Expr END   { Letfun($2, $3, $5, $7) }
+  | LBRACK ListItems RBRACK             { List($2)               }
   | LPAR Expr RPAR                      { $2                     }
+;
+
+ListItems:
+    Expr COMMA ListItems { $1 :: $3 }
+  | Expr                 { [$1]     }
 ;
 
 AppExpr:

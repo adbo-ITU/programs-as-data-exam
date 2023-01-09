@@ -28,6 +28,7 @@ type expr =
   | CstI of int
   | CstS of string
   | FromTo of int * int
+  | FromToChar of char * char
   | Write of expr
   | If of expr * expr * expr
   | Prim of string * expr * expr 
@@ -67,6 +68,16 @@ let rec eval (e : expr) (cont : cont) (econt : econt) =
           else 
               econt ()
       loop i1
+    | FromToChar(c1, c2) ->
+      let nextChar = int >> (+) 1 >> char;
+
+      let rec nextChars cur =
+          if cur <= c2 then
+              cont (Str (string cur)) (fun () -> nextChar cur |> nextChars)
+          else
+              econt ()
+
+      nextChars c1
     | Write e -> 
       eval e (fun v -> fun econt1 -> (write v; cont v econt1)) econt
     | If(e1, e2, e3) -> 

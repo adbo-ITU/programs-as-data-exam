@@ -19,6 +19,7 @@ let nl = CstI 10
 %token EQ NE GT LT GE LE
 %token NOT SEQOR SEQAND
 %token LPAR RPAR LBRACE RBRACE LBRACK RBRACK SEMI COMMA ASSIGN AMP
+%token LBARPAR RBARPAR
 %token EOF
 
 %right ASSIGN             /* lowest precedence */
@@ -30,6 +31,7 @@ let nl = CstI 10
 %left PLUS MINUS
 %left TIMES DIV MOD 
 %nonassoc NOT AMP 
+%nonassoc LBARPAR
 %nonassoc LBRACK          /* highest precedence  */
 
 %start Main
@@ -61,6 +63,8 @@ Vardesc:
   | LPAR Vardesc RPAR                   { $2                                      } 
   | Vardesc LBRACK RBRACK               { compose1 (fun t -> TypA(t, None)) $1    }
   | Vardesc LBRACK CSTINT RBRACK        { compose1 (fun t -> TypA(t, Some $3)) $1 }
+  | Vardesc LBARPAR RBARPAR             { compose1 (fun t -> TypT(t, None)) $1    }
+  | Vardesc LBARPAR CSTINT RBARPAR      { compose1 (fun t -> TypT(t, Some $3)) $1 }
 ;
 
 Fundec:

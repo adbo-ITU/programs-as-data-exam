@@ -35,6 +35,10 @@ let keyword s =
     | "true"    -> CSTBOOL 1
     | "void"    -> VOID 
     | "while"   -> WHILE         
+    | "createStack" -> CREATESTACK
+    | "pushStack" -> PUSHSTACK
+    | "popStack" -> POPSTACK
+    | "printStack" -> PRINTSTACK
     | _         -> NAME s
  
 let cEscape s = 

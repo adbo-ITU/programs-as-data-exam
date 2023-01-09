@@ -81,7 +81,7 @@ created when allocating all but the last word of a free block.
   #define PPCOMP "Not compiled with gcc."
 #endif
 
-#if _WIN64 || __x86_64__ || __ppc64__
+#if _WIN64 || __x86_64__ || __ppc64__ || __aarch64__
   #define ENV64
   #define PPARCH "64 bit architecture."
 #else
@@ -151,6 +151,7 @@ word* readfile(char* filename);
 #endif
 
 #define CONSTAG 0
+#define STACKTAG 1
 
 // Heap size in words
 
@@ -195,6 +196,10 @@ word *freelist;
 #define CDR 29
 #define SETCAR 30
 #define SETCDR 31
+#define CREATESTACK 32
+#define PUSHSTACK   33
+#define POPSTACK    34
+#define PRINTSTACK  35
 
 #define STACKSIZE 1000
 
@@ -237,8 +242,19 @@ void printInstruction(word p[], word pc) {
   case CDR:    printf("CDR"); break;
   case SETCAR: printf("SETCAR"); break;
   case SETCDR: printf("SETCDR"); break;
+  case CREATESTACK: printf("CREATESTACK"); break;
+  case PUSHSTACK: printf("PUSHSTACK"); break;
+  case POPSTACK: printf("POPSTACK"); break;
+  case PRINTSTACK: printf("PRINTSTACK"); break;
   default:     printf("<unknown>"); break;
   }
+}
+
+void printWord(word w) {
+  if (IsInt(w))
+    printf(WORD_FMT " ", Untag(w));
+  else
+    printf("#" WORD_FMT " ", w);
 }
 
 // Print current stack (marking heap references by #) and current instruction
@@ -378,6 +394,60 @@ int execcode(word p[], word s[], word iargs[], int iargc, int /* boolean */ trac
       word v = (word)s[sp--];
       word* p = (word*)s[sp];
       p[2] = v;
+    } break;
+    case CREATESTACK: {
+      word N = Untag(s[sp--]);
+
+      if (N < 0) {
+        printf("Cannot create stack with negative size\n");
+        return -1;
+      }
+
+      word* stack = allocate(STACKTAG, N + 2, s, sp);
+
+      stack[1] = N;
+      stack[2] = 0;
+      for (int i = 3; i <= N + 2; i++)
+        stack[i] = Tag(0);
+    
+      s[++sp] = (word) stack;
+    } break;
+    case PUSHSTACK: {
+      word v = s[sp--];
+      word* stack = (word*) s[sp];
+
+      word N = stack[1];
+      word top = stack[2];
+
+      if (top >= N) {
+        printf("Stack is full - cannot push more items\n");
+        return -1;
+      }
+
+      stack[2] = top + 1;
+      stack[top + 3] = v;
+    } break;
+    case POPSTACK: {
+      word* stack = (word*) s[sp--];
+      word top = stack[2];
+
+      if (top <= 0) {
+        printf("Stack is empty - cannot pop\n");
+        return -1;
+      }
+
+      stack[2] = top - 1;
+      s[++sp] = stack[top + 3 - 1];
+    } break;
+    case PRINTSTACK: {
+      word* stack = (word*) s[sp];
+      word N = stack[1];
+      word top = stack[2];
+
+      printf("STACK(" WORD_FMT ", " WORD_FMT ")[ ", N, top);
+      for (int i = 3; i < top + 3; i++)
+        printWord(stack[i]);
+      printf("]\n");
     } break;
     default:
       printf("Illegal instruction " WORD_FMT " at address " WORD_FMT "\n",

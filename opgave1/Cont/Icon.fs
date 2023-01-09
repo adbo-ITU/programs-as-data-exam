@@ -96,6 +96,11 @@ let rec eval (e : expr) (cont : cont) (econt : econt) =
                       cont (Int i2) econt2
                   else
                       econt2 ()
+              | ("<", Str s1, Str s2) ->
+                  if s1 < s2 then
+                      cont (Str s2) econt2
+                  else
+                      econt2 ()
               | _ -> Str "unknown prim2")
               econt1)
           econt

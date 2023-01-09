@@ -151,6 +151,7 @@ Access:
   | TIMES Access                        { AccDeref (Access $2)}
   | TIMES AtExprNotAccess               { AccDeref $2         }
   | Access LBRACK Expr RBRACK           { AccIndex($1, $3)    }   
+  | Access LBARPAR Expr RBARPAR         { TupIndex($1, $3)    }
 ;
 
 Exprs:

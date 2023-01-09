@@ -1,0 +1,2 @@
+run:
+	fsharpi Icon.fs

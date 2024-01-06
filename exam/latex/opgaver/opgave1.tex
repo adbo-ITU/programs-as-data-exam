@@ -1,0 +1,143 @@
+\section{Icon}
+
+\subsection{Tallene 5-12}
+
+Forneden ses den abstrakte syntaks i Icon til at udskrive samtlige tal fra 5-12:
+
+\begin{minted}{fsharp}
+> open Icon;;
+> let numbers = FromTo(5, 12);;
+val numbers : expr = FromTo (5, 12)
+
+> run (Every (Write numbers));;
+5 6 7 8 9 10 11 12 val it : value = Int 0
+\end{minted}
+
+Generatoren \texttt{numbers} producerer alle tal fra 5-12. Operationen \texttt{Write} udskriver 1 værdi fra generatoren til skærmen. Her bruges \texttt{Every} til at køre \textit{alle} elementerne i \texttt{number} gennem \texttt{Write}.
+
+\subsection{Tallene 5-12 større end 10}
+
+Forneden ses den abstrakte syntaks i Icon til at udskrive tallene fra 5-12, som er større end 10:
+
+\begin{minted}{fsharp}
+> run (Every (Write (Prim("<", CstI 10, numbers))));;
+11 12 val it : value = Int 0
+\end{minted}
+
+Koden virker, fordi den primitive operation $a < b$ filtrerer elementer fra $b$ fra, hvis ikke $a < b_i$. Altså bliver alle elementer fra \texttt{numbers}, hvor 10 ikke er strengt mindre end elementet, filtreret fra. Resten er det samme som det foregående Icon-udtryk.
+
+\subsection{Intervallerne 6-12, 7-12, ..., 12}
+
+Forneden ses den abstrakte syntaks i Icon til at udskrive intervallerne 6-12, 7-12, 8-12, ..., 12:
+
+\begin{minted}{fsharp}
+> run (Every (Write (Prim("<", numbers, And(Write(CstS "\n"), numbers)))));;
+
+ 6 7 8 9 10 11 12
+ 7 8 9 10 11 12
+ 8 9 10 11 12
+ 9 10 11 12
+ 10 11 12
+ 11 12
+ 12
+ val it : value = Int 0
+\end{minted}
+
+Der er foretaget 2 ændringer fra det foregående Icon-udtryk:
+\\\\
+Frem for at første argument til primitivet $<$ er en 1-elements generator \texttt{CstI 10}, er det i stedet en generator med intervallet 5-12 (\texttt{numbers}). Det vil sige, at for hver element i 5-12, vil generatoren til højre (også \texttt{numbers}) blive kørt igennem primitivet $<$. For hver gennemkørsel bliver samme filtreringsproces som før gennemgået --- nu med 5, 6, 7, ..., 12 i stedet for kun 10.
+\\\\
+Derudover er det højre \texttt{numbers} ændret til \texttt{And(Write(CstS "\textbackslash n"), numbers)}. \texttt{And}-reglen producerer alle elementer fra højre generator for hvert element i venstre generator. Fordi venstre generator kun har 1 element, producerer sammensætningen præcis de samme elementer, som \texttt{numbers} normalt ville. Men forskellen er, at \texttt{Write(CstS "\textbackslash n")} bliver kørt, hvilket skriver en ny linje til skærmen, hver gang \texttt{numbers} køres igennem.
+
+\subsection{Tegnintervaller}
+
+Kodeændringerne i \texttt{Icon.fs} for at understøtte tegnintervaller er indsat herunder. En forklaring følger.
+
+\begin{minted}{diff}
+diff Icon.fs
+@@ -28,6 +28,7 @@ type expr =
+   | CstI of int
+   | CstS of string
+   | FromTo of int * int
++  | FromToChar of char * char
+   | Write of expr
+   | If of expr * expr * expr
+   | Prim of string * expr * expr 
+@@ -67,6 +68,16 @@ let rec eval (e : expr) (cont : cont) (econt : econt) =
+           else 
+               econt ()
+       loop i1
++    | FromToChar(c1, c2) ->
++      let nextChar = int >> (+) 1 >> char;
++
++      let rec nextChars cur =
++          if cur <= c2 then
++              cont (Str (string cur)) (fun () -> nextChar cur |> nextChars)
++          else
++              econt ()
++
++      nextChars c1
+     | Write e -> 
+       eval e (fun v -> fun econt1 -> (write v; cont v econt1)) econt
+     | If(e1, e2, e3) -> 
+\end{minted}
+
+Typen \texttt{expr} er udvidet med varianten \texttt{FromToChar}, som holder på et par af tegn, ligesom \texttt{FromTo} holder på et par af heltal. Linje 15 viser en hjælpefunktion, som finder det næste tegn i sekvensen ved blot at plusse tegnets numeriske værdi med 1. Herefter bruges en rekursiv closure til at iterere gennem hele sekvensen, så længe det nuværende element er mindre end eller lig med det sidste element. Hvert rekursive kald sker i en anonym closure, der gives som argument til den givne continutation --- derfor kommer evalueringen til at være lazy. Lige så snart \texttt{if}-sætningen ikke er sand, fejler generatoren.
+\\\\
+Eksemplerne fra opgaven, samt et ekstra eksempel med intervallet \texttt{!}-\texttt{?}, er indsat således:
+
+\begin{minted}{fsharp}
+> let chars = FromToChar('C', 'L');;
+val chars : expr = FromToChar ('C', 'L')
+
+> run chars;;
+val it : value = Str "C"
+
+> run (Every(Write(chars)));;
+C D E F G H I J K L val it : value = Int 0
+
+> run (Every(Write(FromToChar('!', '?'))));;
+! " # $ % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ? val it : value = Int 0
+\end{minted}
+
+\subsection{Sammenligning af strenge}
+
+Ændringen i \texttt{Icon.fs} er som følgende:
+
+\begin{minted}{diff}
+diff Icon.fs
+@@ -96,6 +96,11 @@ let rec eval (e : expr) (cont : cont) (econt : econt) =
+                       cont (Int i2) econt2
+                   else
+                       econt2 ()
++              | ("<", Str s1, Str s2) ->
++                  if s1 < s2 then
++                      cont (Str s2) econt2
++                  else
++                      econt2 ()
+               | _ -> Str "unknown prim2")
+               econt1)
+           econt
+\end{minted}
+
+Logikken er den samme som for heltal --- kun typerne er anderledes. Ved at matche på \texttt{Str}-varianten, bliver den nye kode kun kørt, når begge argumenter er strenge. Hvis første argument er strengt mindre end andet argument, bliver andet argument outputtet af generatoren. Ellers fejler generatoren. Det demonstreres, at eksemplerne fungerer:
+
+\begin{minted}{fsharp}
+> run (Prim("<", CstS "A", CstS "B"));;
+val it : value = Str "B"
+
+> run (Prim("<", CstS "B", CstS "A"));;
+Failed
+val it : value = Int 0
+\end{minted}
+
+\subsection{Intervallet H-L}
+
+Icon-udtrykket til at skrive H-L til skærmen ved at bruge \texttt{chars} kan ses her:
+
+\begin{minted}{fsharp}
+> run (Every(Write(Prim("<", CstS "G", chars))));;
+H I J K L val it : value = Int 0
+\end{minted}
+
+Løsningen fungerer ved at tage intervallet \texttt{chars} (C til L) og filtrere alle strenge fra, hvor G ikke er strengt mindre. Betingelsen bliver først sand fra H og op. \texttt{chars} slutter på L, så den resulterende generator kommer til at være intervallet H-L.

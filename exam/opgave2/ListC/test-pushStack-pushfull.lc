@@ -1,0 +1,8 @@
+void main() {
+  dynamic s;
+  s = createStack(1);
+  pushStack(s, 1);
+  printStack(s);
+  pushStack(s, 2);
+  printStack(s);
+}

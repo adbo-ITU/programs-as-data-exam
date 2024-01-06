@@ -1,0 +1,37 @@
+\documentclass[12pt]{article}
+
+\input{preamble.tex}
+
+\begin{document}
+
+\begin{titlepage}
+    \input{frontpage}
+\end{titlepage}
+
+\pagestyle{fancy}
+
+\fancyhead[L]{BSPRDAT1KU}
+\fancyhead[C]{Skriftlig eksamen, \today}
+\fancyhead[R]{adbo@itu.dk}
+\fancyfoot[C]{\thepage\ af \pageref{LastPage}}
+
+\tableofcontents
+
+\newpage
+
+\begin{mdframed}
+\bfseries
+Jeg erklærer hermed at jeg selv har lavet hele denne eksamensbesvarelse uden hjælp fra andre.
+\end{mdframed}
+
+\input{foreword}
+\newpage
+\input{opgaver/opgave1}
+\newpage
+\input{opgaver/opgave2}
+\newpage
+\input{opgaver/opgave3}
+\newpage
+\input{opgaver/opgave4}
+
+\end{document}

@@ -1,0 +1,322 @@
+\section{List-C: Stack}
+
+\subsection{Lexer og parser}
+
+Ændringerne til lexeren og parseren er som følgende:
+
+\begin{minted}{diff}
+diff CLex.fsl
+@@ -37,2 +37,6 @@ let keyword s =
+     | "while"       -> WHILE         
++    | "createStack" -> CREATESTACK
++    | "pushStack"   -> PUSHSTACK
++    | "popStack"    -> POPSTACK
++    | "printStack"  -> PRINTSTACK
+     | _             -> NAME s
+
+diff CPar.fsy
+@@ -17,2 +17,3 @@ let nl = CstI 10
+ %token CHAR ELSE IF INT NULL PRINT PRINTLN RETURN VOID WHILE
++%token CREATESTACK PUSHSTACK POPSTACK PRINTSTACK
+ %token NIL CONS CAR CDR DYNAMIC SETCAR SETCDR
+@@ -140,2 +141,3 @@ AtExprNotAccess:
+     Const                               { CstI $1               }
++  | StackOperations                     { $1                    }
+   | LPAR ExprNotAccess RPAR             { $2                    } 
+@@ -150,2 +152,9 @@ AtExprNotAccess:
+ 
++StackOperations:
++      CREATESTACK LPAR Expr RPAR          { Prim1("createStack", $3)   }
++    | PUSHSTACK LPAR Expr COMMA Expr RPAR { Prim2("pushStack", $3, $5) }
++    | POPSTACK LPAR Expr RPAR             { Prim1("popStack", $3)      }
++    | PRINTSTACK LPAR Expr RPAR           { Prim1("printStack", $3)    }
++;
+
+ Access:
+\end{minted}
+
+4 tokens er tilføjet på linje 13. Linje 4-7 viser lexerændringerne, der oversætter keywords til tokens. Linje 17 viser en ny grammatikregel \texttt{StackOperations}, som defineres på linje 21-26. Det er ikke nødvendigt at dedikere en separat blok til \texttt{StackOperations} --- man kunne sagtens have indsat de 4 nye grammatikregler under \texttt{AtExprNotAccess}, men jeg flyttede det ud, for at gøre koden mere overskuelig.
+\\\\
+Derefter har jeg ændret \texttt{ListCC.fs}, så det abstrakte syntakstræ bliver skrevet til skærmen:
+
+\begin{minted}{diff}
+diff ListCC.fs
+@@ -13,3 +13,6 @@ let _ = if args.Length > 1 then
+            printf "Compiling %s to %s\n" source target;
+-           try ignore (Comp.compileToFile (Parse.fromFile source) target)
++           try
++                let s = Parse.fromFile source
++                printfn "Parsed: %A" s
++                ignore (Comp.compileToFile (s) target)
+            with Failure msg -> printf "ERROR: %s\n" msg
+\end{minted}
+
+Efter \texttt{listcc.exe} er bygget med de nye ændringer, parses \texttt{stack.lc} således:
+
+\begin{minted}{fsharp}
+$ mono listcc.exe stack.lc
+List-C compiler v 1.0.0.0 of 2012-02-13
+Compiling stack.lc to stack.out
+Parsed: Prog
+  [Fundec
+     (None, "main", [],
+      Block
+        [Dec (TypD, "s");
+         Stmt (Expr (Assign (AccVar "s", Prim1 ("createStack", CstI 3))));
+         Stmt (Expr (Prim2 ("pushStack", Access (AccVar "s"), CstI 42)));
+         Stmt (Expr (Prim2 ("pushStack", Access (AccVar "s"), CstI 43)));
+         Stmt (Expr (Prim1 ("printStack", Access (AccVar "s"))));
+         Stmt (Expr (Prim1 ("printi", Prim1 ("popStack", Access (AccVar "s")))));
+         Stmt (Expr (Prim1 ("printi", Prim1 ("popStack", Access (AccVar "s")))));
+         Stmt (Expr (Prim1 ("printStack", Access (AccVar "s"))))])]
+ERROR: unknown primitive 1
+\end{minted}
+
+Bemærk at fejlen \texttt{ERROR: unknown primitive 1} er forventet, idet compileren ikke er udvidet med logikken til at håndtere stack-primitiver endnu.
+\\\\
+Derudover differentierer linje 14 sig fra opgavens ``forventede'' uddata, idet det givne eksempel på uddata har en variabel med navnet \texttt{t} i stedet for \texttt{s}. Jeg antager, at dette er en fejl i opgaveformuleringen.
+
+\subsection{Implementering af stak i bytekodefortolkeren}
+
+Kodeændringerne beskrives først (i rækkefølgen, ændringerne vises), hvorefter de vises:
+
+\begin{itemize}
+    \item Linje 5: En lille ændring, så bytekodefortolkeren virker på macOS med ARM-processorer.
+    \item Linje 9: Et tag, der bruges i headeren, når et objekt allokeres på hoben. Det bruges til at vide, at typen på det allokerede objekt er en stak.
+    \item Linje 13-16: Bytekodeinstruktionernes tal forbindes med deres navn.
+    \item Linje 20-23: Kode til at udskrive bytekodeinstruktionerne.
+    \item Linje 27-32: En hjælperfunktion til at udskrive værdier afhængigt af deres tag (heltal og referencer).
+    \item Linje 37-53: Implementering af \texttt{createStack}. Der sørges for at $N$ fra stakken bliver untagget --- og hvis $N$ er negativt, fejler programmet. Et objekt med størrelsen $N + 2$ bliver allokeret, da der skal være plads til $N$ elementer samt 2 pladser til $N$ og \texttt{top}. Headeren bliver tilføjet af \texttt{allocate}. Derefter initialiseres stakken med $N$, \texttt{top} som 0, og resten af pladserne udfyldes med et 0 (tagget som heltal). Adressen tilføjes til programstakken.
+    \item Linje 54-68: Implementering af \texttt{pushStack}. Værdien, der skal skubbes på stakken, læses (uden at untagge den, så typen bliver bibeholdt), og selve stakkens adresse læses også. Derfra læses $N$ og \texttt{top} fra hoben. Hvis stakken er fuld, fejler programmet. Stakkens adresse efterlades på programstakken.
+    \item Linje 69-80: Implementering af \texttt{popStack}. Stakkens adresse læses fra programstakken. Derfra læses \texttt{top} fra hoben. Hvis stakken er tom, fejler programmet. Værdien af \texttt{top} dekrementeres med 1, og den poppede værdi efterlades på programstakken.
+    \item Linje 81-90: Implementering af \texttt{printStack}. Stakkens adresse læses fra programstakken (uden at poppe den). Derfra læses og udskrives $N$ og \texttt{top} fra hoben. Ved brug af en løkke og hjælpefunktionen \texttt{printWord} udskrives alle elementer i stakken type-afhængigt.
+    \item \texttt{Machine.fs} er blot udvidet med de nye instruktioner og bytekode-tal.
+\end{itemize}
+
+\begin{minted}{diff}
+diff listmachine.c
+@@ -83,3 +83,3 @@ created when allocating all but the last word of a free block.
+ 
+-#if _WIN64 || __x86_64__ || __ppc64__
++#if _WIN64 || __x86_64__ || __ppc64__ || __aarch64__
+   #define ENV64
+@@ -153,2 +153,3 @@ word* readfile(char* filename);
+ #define CONSTAG 0
++#define STACKTAG 1
+ 
+@@ -197,2 +198,6 @@ word *freelist;
+ #define SETCDR 31
++#define CREATESTACK 32
++#define PUSHSTACK   33
++#define POPSTACK    34
++#define PRINTSTACK  35
+ 
+@@ -239,2 +244,6 @@ void printInstruction(word p[], word pc) {
+   case SETCDR: printf("SETCDR"); break;
++  case CREATESTACK: printf("CREATESTACK"); break;
++  case PUSHSTACK: printf("PUSHSTACK"); break;
++  case POPSTACK: printf("POPSTACK"); break;
++  case PRINTSTACK: printf("PRINTSTACK"); break;
+   default:     printf("<unknown>"); break;
+@@ -243,2 +252,9 @@ void printInstruction(word p[], word pc) {
+ 
++void printWord(word w) {
++  if (IsInt(w))
++    printf(WORD_FMT " ", Untag(w));
++  else
++    printf("#" WORD_FMT " ", w);
++}
++
+ // Print current stack (marking heap references by #) and current instruction
+@@ -381,2 +397,56 @@ int execcode(word p[], word s[], word iargs[], int iargc, int /* boolean */ trac
+     } break;
++    case CREATESTACK: {
++      word N = Untag(s[sp--]);
++
++      if (N < 0) {
++        printf("Cannot create stack with negative size\n");
++        return -1;
++      }
++
++      word* stack = allocate(STACKTAG, N + 2, s, sp);
++
++      stack[1] = N;
++      stack[2] = 0;
++      for (int i = 3; i <= N + 2; i++)
++        stack[i] = Tag(0);
++    
++      s[++sp] = (word) stack;
++    } break;
++    case PUSHSTACK: {
++      word v = s[sp--];
++      word* stack = (word*) s[sp];
++
++      word N = stack[1];
++      word top = stack[2];
++
++      if (top >= N) {
++        printf("Stack is full - cannot push more items\n");
++        return -1;
++      }
++
++      stack[2] = top + 1;
++      stack[top + 3] = v;
++    } break;
++    case POPSTACK: {
++      word* stack = (word*) s[sp--];
++      word top = stack[2];
++
++      if (top <= 0) {
++        printf("Stack is empty - cannot pop\n");
++        return -1;
++      }
++
++      stack[2] = top - 1;
++      s[++sp] = stack[top + 3 - 1];
++    } break;
++    case PRINTSTACK: {
++      word* stack = (word*) s[sp];
++      word N = stack[1];
++      word top = stack[2];
++
++      printf("STACK(" WORD_FMT ", " WORD_FMT ")[ ", N, top);
++      for (int i = 3; i < top + 3; i++)
++        printWord(stack[i]);
++      printf("]\n");
++    } break;
+     default:
+
+diff Machine.fs
+@@ -49,2 +49,6 @@ type instr =
+   | SETCDR                             (* set second field of cons cell   *)
++  | CREATESTACK
++  | PUSHSTACK
++  | POPSTACK
++  | PRINTSTACK
+ 
+@@ -105,2 +109,6 @@ let CODESETCAR = 30;
+ let CODESETCDR = 31;
++let CODECREATESTACK = 32;
++let CODEPUSHSTACK   = 33;
++let CODEPOPSTACK    = 34;
++let CODEPRINTSTACK  = 35;
+ 
+@@ -145,2 +153,6 @@ let makelabenv (addr, labenv) instr =
+     | SETCDR         -> (addr+1, labenv)
++    | CREATESTACK    -> (addr+1, labenv)
++    | PUSHSTACK      -> (addr+1, labenv)
++    | POPSTACK       -> (addr+1, labenv)
++    | PRINTSTACK     -> (addr+1, labenv)
+ 
+@@ -183,2 +195,6 @@ let rec emitints getlab instr ints =
+     | SETCDR         -> CODESETCDR :: ints
++    | CREATESTACK    -> CODECREATESTACK :: ints
++    | PUSHSTACK      -> CODEPUSHSTACK   :: ints
++    | POPSTACK       -> CODEPOPSTACK    :: ints
++    | PRINTSTACK     -> CODEPRINTSTACK  :: ints
+\end{minted}
+
+\subsection{Implementering af stak i oversætteren}
+
+Kodeændringen er vist forneden. 1-arguments-primitivet er udvidet med \texttt{createStack}, \texttt{popStack}, og \texttt{printStack}. 2-arguments-primitivet er udvidet med \texttt{pushStack}. De foregående værdier på stakken, som de nye instruktioner har brug for, tilføjes i forvejen af \texttt{cExpr}.
+
+\begin{minted}{diff}
+diff Comp.fs
+@@ -182,2 +182,5 @@ and cExpr (e : expr) (varEnv : varEnv) (funEnv : funEnv) : instr list =
+          | "cdr"    -> [CDR]
++         | "createStack" -> [CREATESTACK]
++         | "popStack"    -> [POPSTACK]
++         | "printStack"  -> [PRINTSTACK]
+          | _        -> raise (Failure "unknown primitive 1"))
+@@ -201,2 +204,3 @@ and cExpr (e : expr) (varEnv : varEnv) (funEnv : funEnv) : instr list =
+          | "setcdr" -> [SETCDR]
++         | "pushStack" -> [PUSHSTACK]
+          | _        -> raise (Failure "unknown primitive 2"))
+\end{minted}
+
+Ved at køre bytekodefortolkeren op mod \texttt{stack.lc} (hvor \texttt{stack.out} kommer fra de nye ændringer i oversætteren) fås:
+
+\begin{minted}{shell}
+$ ./listmachine ./stack.out
+STACK(3, 2)[ 42 43 ]
+43 42 STACK(3, 0)[ ]
+
+Used 0 cpu milli-seconds
+\end{minted}
+
+Opgavebeskrivelsen siger, at stakken skal udskrives som \texttt{STACK(3, 2)[ 42 43 ]}, men det givne eksempel viser \texttt{STACK(3, 2)=[ 42 43 ]} (bemærk det tilføjede lighedstegn). Jeg har antaget, at jeg skal følge opgavebeskrivelsen, og jeg har derfor ikke printet et lighedstegn.
+
+\subsection{Test af stakken}
+
+De vigtigste ting at teste er, at stakken fungerer som forventet i de mest sædvanlige tilfælde, samt at den fungerer i edge cases. Fordi \texttt{stack.lc} ikke tester edge cases, vil jeg fokusere på dem.
+
+\begin{enumerate}
+    \item \texttt{createStack} bør virke, når størrelsen er 0:
+        \begin{minted}[autogobble]{c}
+            void main() {
+              printStack(createStack(0));
+            }
+        \end{minted}
+        Uddata bekræfter, at testen består:
+        \begin{minted}[autogobble]{shell}
+            $ ./listmachine test-createStack-empty.out
+            STACK(0, 0)[ ]
+
+            Used 0 cpu milli-seconds
+        \end{minted}
+    \item \texttt{createStack} bør fejle, når størrelsen er negativ:
+        \begin{minted}[autogobble]{c}
+            void main() {
+              printStack(createStack(-1));
+            }
+        \end{minted}
+        Uddata viser, at programmet fejler (som forventet):
+        \begin{minted}[autogobble]{shell}
+            $ ./listmachine test-createStack-negative.out
+            Cannot create stack with negative size
+
+            Used 0 cpu milli-seconds
+        \end{minted}
+    \item \texttt{pushStack} bør bevare typen på den givne værdi --- så heltal opbevares som heltal, og referencer til hoben opbevares som referencer:
+        \begin{minted}[autogobble]{c}
+            void main() {
+              dynamic s;
+              s = createStack(3);
+            
+              pushStack(s, s);
+              pushStack(s, 100);
+            
+              printStack(s);
+            
+              print popStack(s);
+              print popStack(s);
+            }
+        \end{minted}
+        Uddata viser, at bytekodefortolkeren differentierer mellem referencer til hoben og skalarværdier internt, samt at værdierne korrekt poppes ud:
+        \begin{minted}[autogobble]{shell}
+            $ ./listmachine test-pushStack-types.out
+            STACK(3, 2)[ #5813341184 100 ]
+            100 5813341184
+            Used 0 cpu milli-seconds
+        \end{minted}
+    
+    \item \texttt{pushStack} bør fejle, når der pushes til en fuld stak:
+        \begin{minted}[autogobble]{c}
+            void main() {
+              dynamic s;
+              s = createStack(1);
+              pushStack(s, 1);
+              printStack(s);
+              pushStack(s, 2);
+              printStack(s);
+            }
+        \end{minted}
+        Uddata viser, at programmet fejler (som forventet):
+        \begin{minted}[autogobble]{shell}
+            $ ./listmachine test-pushStack-pushfull.out
+            STACK(1, 1)[ 1 ]
+            Stack is full - cannot push more items
+            
+            Used 0 cpu milli-seconds
+        \end{minted}
+\end{enumerate}

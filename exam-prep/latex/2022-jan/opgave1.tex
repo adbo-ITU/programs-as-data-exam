@@ -1,0 +1,200 @@
+\section{Micro–ML: Sets}
+
+\subsection{Lexer og parser}
+
+Nedenfor ses kodeændringen:
+
+\begin{minted}{diff}
+--- a/2022-jan/opgave-1/Fun/Absyn.fs
++++ b/2022-jan/opgave-1/Fun/Absyn.fs
+@@ -11,3 +11,4 @@
+   | Call of expr * expr
++  | Set of expr list (* Exam *)
+
+--- a/2022-jan/opgave-1/Fun/FunLex.fsl
++++ b/2022-jan/opgave-1/Fun/FunLex.fsl
+@@ -48,6 +48,10 @@
+   | "<="            { LE }
++  | "++"            { UNION }
++  | '{'             { LBRACE }
++  | '}'             { RBRACE }
++  | ','             { COMMA }
+   | '+'             { PLUS }    
+
+--- a/2022-jan/opgave-1/Fun/FunPar.fsy
++++ b/2022-jan/opgave-1/Fun/FunPar.fsy
+@@ -12,21 +12,22 @@
+ %token ELSE END FALSE IF IN LET NOT THEN TRUE
+-%token PLUS MINUS TIMES DIV MOD
++%token PLUS MINUS TIMES DIV MOD UNION
+ %token EQ NE GT LT GE LE
+-%token LPAR RPAR 
++%token LPAR RPAR LBRACE RBRACE COMMA
+ %token EOF
+ ...
+ %left GT LT GE LE
+-%left PLUS MINUS
++%left PLUS MINUS UNION
+ %left TIMES DIV MOD 
+ ...
+ %type <Absyn.expr> AppExpr
++%type <Absyn.expr list> SetItems
+ 
+ %%
+ 
+@@ -50,6 +51,7 @@ Expr:
+   | Expr LE    Expr                     { Prim("<=", $1, $3)     }
++  | Expr UNION Expr                     { Prim("++", $1, $3)     }
+ ;
+ 
+ AtExpr:
+@@ -57,6 +59,7 @@ AtExpr:
+   | LET NAME NAME EQ Expr IN Expr END   { Letfun($2, $3, $5, $7) }
++  | LBRACE SetItems RBRACE              { Set($2)                }
+   | LPAR Expr RPAR                      { $2                     }
+ 
+@@ -69,3 +72,8 @@ Const:
+   | CSTBOOL                             { CstB($1)               }
+ ;
++
++SetItems:
++    SetItems COMMA Expr { $3 :: $1  }
++  | Expr                { [$1]      }
++;
+\end{minted}
+
+Koden kompileres og køres med:
+
+\begin{minted}{shell}
+$ fslex --unicode FunLex.fsl
+$ fsyacc --module FunPar FunPar.fsy
+$ fsharpi -r FsLexYacc.Runtime.dll Absyn.fs FunPar.fs FunLex.fs Parse.fs Fun.fs ParseAndRun.fs
+> open Parse;;
+\end{minted}
+
+Herefter bliver resultatet for det første eksempel:
+
+\begin{minted}{fsharp}
+> fromString @"let s1 = {2, 3} in
+-   let s2 = {1, 4} in
+-     s1 ++ s2 = {2,4,3,1}
+-   end
+- end";;
+val it : Absyn.expr =
+  Let
+    ("s1", Set [CstI 3; CstI 2],
+     Let
+       ("s2", Set [CstI 4; CstI 1],
+        Prim
+          ("=", Prim ("++", Var "s1", Var "s2"),
+           Set [CstI 1; CstI 3; CstI 4; CstI 2])))
+\end{minted}
+
+Og resultatet for den tomme mængde bliver, som specificeret, en fejl:
+
+\begin{minted}[breakanywhere]{fsharp}
+> fromString "let s = {} in s end";;
+System.Exception: parse error near line 1, column 10
+
+  at Microsoft.FSharp.Core.PrintfModule+PrintFormatToStringThenFail@1433[TResult].Invoke (System.String message) [0x00000] in <b56f33d2f53c2e7533e6754e4d8591b5>:0
+  ...
+\end{minted}
+
+\subsection{Evalueringstræ}
+
+Nedenfor ses evalueringstræet jf. kursusbogens Figur 4.3 samt de to nye evalueringsregler fra eksamenssættet.
+
+\begin{figure}[H]
+    \hbox{\makebox[\textwidth][c]{
+    \begin{prooftree}
+        \infer0[(\textit{e1})]{\rho \vdash \texttt{1 $\Rightarrow 1$}}
+        \infer0[(\textit{e1})]{\rho \vdash \texttt{2 $\Rightarrow 2$}}
+        \infer2[(\textit{set})]{\rho \vdash \texttt{\{1, 2\} $\Rightarrow$ SetV$\{1, 2\}$}}
+    
+        \hypo{\rho'(\texttt{s}) = \texttt{SetV}\{1, 2\}}
+        \infer1[(\textit{e3})]{\rho' \vdash \texttt{s} \Rightarrow \texttt{SetV}\{1, 2\}}
+    
+        \infer0[(\textit{e1})]{\rho' \vdash \texttt{3} \Rightarrow 3}
+        \infer1[(\textit{set})]{\rho' \vdash \texttt{3} \Rightarrow \texttt{SetV}\{3\}}
+    
+        \infer2[(++)]{\rho' = \rho [\texttt{s} \mapsto \texttt{SetV}\{1, 2\}] \vdash \texttt{s ++ \{3\}} \Rightarrow \texttt{SetV}\{1, 2, 3\}}
+    
+        \infer2[(\textit{e6})]{\rho \vdash \texttt{let s = \{1, 2\} in s ++ \{3\} end $\Rightarrow$ SetV$\{1, 2, 3\}$}}
+    \end{prooftree}
+    }}
+\end{figure}
+
+\subsection{Implementation}
+
+\begin{minted}[linenos]{diff}
+--- a/2022-jan/opgave-1/Fun/HigherFun.fs
++++ b/2022-jan/opgave-1/Fun/HigherFun.fs
+@@ -30,11 +30,13 @@
+ type value = 
+   | Int of int
+   | Closure of string * string * expr * value env
++  | SetV of Set<value>
+ 
+ let rec eval (e : expr) (env : value env) : value =
+     match e with
+     | CstI i -> Int i
+     | CstB b -> Int (if b then 1 else 0)
++    | Set s -> SetV(s |> List.map (fun e' -> eval e' env) |> Set.ofList)
+     | Var x  -> lookup env x
+
+@@ -45,6 +47,8 @@
+       | ("<", Int i1, Int i2) -> Int (if i1 < i2 then 1 else 0)
++      | ("++", SetV s1, SetV s2) -> SetV (Set.union s1 s2)
++      | ("=", SetV s1, SetV s2) -> Int (if s1 = s2 then 1 else 0)
+       |  _ -> failwith "unknown primitive or wrong type"
+\end{minted}
+
+På linje 7 bliver \texttt{value}-typen udvidet med \texttt{SetV}-varianten, der opbevarer en F\#-mængde internt.
+\\\\
+På linje 13 findes koden til at evaluere en \texttt{Set}-expression, hvilket returnerer en instans af \texttt{SetV}. \texttt{Set} holder på en liste af expressions, som først skal evalueres, før den endelige \texttt{SetV} kan returneres --- derfor bruges \texttt{List.map} til at evaluere hvert element i listen. Her er det vigtigt, at \texttt{List.map} sker før, listen bliver lavet om til en mængde. Hvis man bruger \texttt{map} på mængden i stedet for listen, kan man risikere at fjerne eksekveringen af visse udtryk, hvis der er flere af det samme udtryk. Hvis udtrykket har sideeffekter (såsom at skrive til skærmen), vil det kunne bemærkes.
+\\\\
+På linje 18 og 19 implementeres operatorerne \texttt{++} og \texttt{=} for mængder ved hjælp af F\#'s indbyggede konstruktioner. \texttt{Set.union} forener de to mængder, og \texttt{=} sammenligner rekursivt hvert element.
+\\\\
+Forneden ses resultatet af at køre \texttt{ex01} gennem \texttt{HigherFun}s fortolker. Resultatet er 1, hvilket indikerer, at \texttt{s1 ++ s2} er lig mængden \{1, 2, 3, 4\}.
+
+\begin{minted}{fsharp}
+> fromString @"let s1 = {2, 3} in
+-   let s2 = {1, 4} in
+-     s1 ++ s2 = {2,4,3,1}
+-   end
+- end";;
+val it : Absyn.expr =
+  Let
+    ("s1", Set [CstI 3; CstI 2],
+     Let
+       ("s2", Set [CstI 4; CstI 1],
+        Prim
+          ("=", Prim ("++", Var "s1", Var "s2"),
+           Set [CstI 1; CstI 3; CstI 4; CstI 2])))
+
+> HigherFun.eval it [];;
+val it : HigherFun.value = Int 1
+\end{minted}
+
+\subsection{Typeregler}
+
+Mine forslag til typereglerne er som følgende:
+
+\begin{figure}[H]
+    \centering
+    \begin{prooftree}
+        \hypo{\rho \vdash e_1 : t\ \texttt{set}}
+        \hypo{\rho \vdash e_2 : t\ \texttt{set}}
+        \infer2[(++)]{\rho \vdash e_1\ \texttt{++}\ e_2 : t\ \texttt{set}}
+    \end{prooftree}
+    \hspace{1cm}
+    \begin{prooftree}
+        \hypo{\rho \vdash e_1 : t\ \texttt{set}}
+        \hypo{\rho \vdash e_2 : t\ \texttt{set}}
+        \infer2[(=)]{\rho \vdash e_1 = e_2 : \texttt{bool}}
+    \end{prooftree}
+\end{figure}
+
+Til \texttt{++}-reglen har jeg antaget, at mængden kun kan indeholde elementer af samme type. Derfor har jeg i reglen specificeret, at hvis forener 2 mængder, så skal de begge have samme type $t$. Dermed bliver foreningsmængden også til typen $t$.
+\\\\
+Til \texttt{=}-reglen har jeg samme antagelse som ovenfor. Det giver kun mening at sammenligne to mængder, hvis, hvis elementerne har samme type. Resultatet bliver sandt eller falsk alt efter om de to mængder er lig hinanden, hvilket repræsenteres med \texttt{bool}. I den faktiske implementation er typen \texttt{int}, idet returværdien er 0 eller 1 frem for sand eller falsk.

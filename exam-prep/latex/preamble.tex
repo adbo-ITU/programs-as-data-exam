@@ -1,0 +1,30 @@
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[danish]{babel}
+\usepackage{minted}
+\usepackage[a4paper, bottom=3cm, top=3cm, left=2.5cm, right=2.5cm]{geometry}
+\usepackage[linewidth=1pt]{mdframed}
+\usepackage{ebproof}
+\usepackage{amsmath}
+\usepackage{fourier}
+\usepackage{booktabs}
+\usepackage{inconsolata}
+\usepackage{float}
+\usepackage{lastpage}
+\usepackage{graphicx}
+\usepackage{titling}
+\usepackage{fancyhdr}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\addto\captionsdanish{%
+ \renewcommand\chaptername{Eksamenssæt}}
+
+\setlength{\parindent}{0em} % Paragraph indent
+
+\colorlet{LightGray}{Gray!7!}
+
+\setminted{bgcolor=LightGray, breaklines, frame=single, linenos, fontsize=\small}
+
+\AtBeginEnvironment{minted}{%
+  \renewcommand{\fcolorbox}[4][]{#4}}

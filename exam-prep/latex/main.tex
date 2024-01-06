@@ -1,0 +1,47 @@
+\documentclass[12pt, oneside]{book}
+
+\input{preamble.tex}
+
+\begin{document}
+
+\begin{titlepage}
+    \input{frontpage}
+\end{titlepage}
+
+\pagestyle{fancy}
+
+\fancyhead[L]{BSPRDAT1KU}
+\fancyhead[C]{Skriftlig eksamen, \today}
+\fancyhead[R]{adbo@itu.dk}
+\fancyfoot[C]{\thepage\ af \pageref{LastPage}}
+
+\tableofcontents
+
+\newpage
+
+\begin{mdframed}
+\bfseries
+Jeg erklærer hermed at jeg selv har lavet hele denne eksamensbesvarelse uden hjælp fra andre.
+\end{mdframed}
+
+\setcounter{section}{-1}
+\section{Foregående kommentarer}
+
+Når jeg viser kodeændringer, vil det blive vist i samme format som en Git diff. Nedenfor ses et eksempel på formatet.
+
+\begin{minted}{diff}
+--- a/2022-jan/opgave-1/notes.md
++++ b/2022-jan/opgave-1/notes.md
+@@ -1,2 +1,2 @@
+ Gammel, ændret linje
+-Fjernet eller modificeret linje før ændring
++Ny eller modificeret linje efter ændring
+\end{minted}
+
+De første 2 linjer visen filen, der er blevet ændret. Derefter vises linjetallet på ændringen. Dernæst er selve ændringen.
+
+\input{2022-jan/2022-jan}
+\input{2021-jan/2021-jan}
+\input{2019-dec/2019-dec}
+
+\end{document}

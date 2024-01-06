@@ -1,0 +1,103 @@
+\section{Icon}
+
+\subsection{1-10}
+
+\begin{minted}{fsharp}
+> run (Every(Write (FromTo (1, 10))));;
+1 2 3 4 5 6 7 8 9 10 val it : value = Int 0
+\end{minted}
+
+Konstruktionen \texttt{FromTo(1, 10)} bruges til at generere en sekvens fra 1 til 10. Herefter bruges \texttt{Write} til at printe et element fra sekvensen. Men for at printe \textit{alle} elementer skal konstruktionen \texttt{Every} bruges.
+
+\subsection{10-tals-tabellen}
+
+\begin{minted}{fsharp}
+> run (Every(Write (Prim("*", FromTo(1, 10), FromTo(1, 10)))));;
+1 2 3 4 5 6 7 8 9 10 2 4 6 8 10 12 14 16 18 20 3 6 9 12 15 18 21 24 27 30 4 8 12 16 20 24 28 32 36 40 5 10 15 20 25 30 35 40 45 50 6 12 18 24 30 36 42 48 54 60 7 14 21 28 35 42 49 56 63 70 8 16 24 32 40 48 56 64 72 80 9 18 27 36 45 54 63 72 81 90 10 20 30 40 50 60 70 80 90 100 val it : value = Int 0
+\end{minted}
+
+Igen gør jeg brug af \texttt{FromTo} til at generere en sekvens fra 1 til 10. Jeg bruger \texttt{Prim("*", a, b)} til at gange de to sekvenser sammen. For hvert tal i $a_i$ i \texttt{a} bliver alle tal i sekvens \texttt{b} ganget med $a_i$ og tilføjet som resultat i en ny sekvens. Derfor bliver resultatet \texttt{length(a) * length(b)} langt. Fordi jeg bruger to sekvenser fra 1-10, kommer alle tal fra 1-10 til at blive ganget med 1, så alle tal ganget med 2 osv.
+
+\subsection{10-tals-tabellen på flere linjer}
+
+\begin{minted}{fsharp}
+> run (Every(Write (Prim("*", FromTo(1, 10), And(Write (CstS "\n"), FromTo(1, 10))))));;
+
+ 1 2 3 4 5 6 7 8 9 10
+ 2 4 6 8 10 12 14 16 18 20
+ 3 6 9 12 15 18 21 24 27 30
+ 4 8 12 16 20 24 28 32 36 40
+ 5 10 15 20 25 30 35 40 45 50
+ 6 12 18 24 30 36 42 48 54 60
+ 7 14 21 28 35 42 49 56 63 70
+ 8 16 24 32 40 48 56 64 72 80
+ 9 18 27 36 45 54 63 72 81 90
+ 10 20 30 40 50 60 70 80 90 100 val it : value = Int 0
+\end{minted}
+
+Koden er næsten det samme som for 10-tals-tabellen på én linje, men her bliver \texttt{And} brugt. \texttt{And(a, b)} producerer hvert element i \texttt{b} for hvert element i \texttt{a}. Jeg bruger det til at \texttt{Write} en ny linje (\texttt{CstS "\textbackslash n"}) for hver gennemgang af de 10 tal på højre side.
+
+\subsection{Tilfældige tal}
+
+Ændringerne i \texttt{Icon.fs} kan ses forneden. Linje 7 viser, de nye variant, der holder de 3 givne parametre. Linje 26-34 viser hovedændringen. Her har jeg lavet en rekursiv funktion, der gør brug af den givne continuation. Rekursionen starter med argumentet 1 og plusser en til argumentet for hvert element, hvorved den stopper, når argumentet overskrider \texttt{num}. Når dette sker, bliver fejl-continuationen kaldt. Det er kaldet til continuationen, der bliver returneret (hvor det rekursive kald er lazy-evalueret).
+
+\begin{minted}{diff}
+--- a/2022-jan/opgave-4/Cont/Icon.fs
++++ b/2022-jan/opgave-4/Cont/Icon.fs
+@@ -35,6 +35,7 @@ type expr =
+   | Or  of expr * expr
+   | Seq of expr * expr
+   | Every of expr 
++  | Random of int * int * int
+   | Fail;;
+ 
+ (* Runtime values and runtime continuations *)
+@@ -54,6 +55,10 @@ let write v =
+     | Int i -> printf "%d " i
+     | Str s -> printf "%s " s;;
+ 
++let random = new System.Random();
++let randomNext(min, max) =
++    random.Next(min,max+1) // max is exclusive in Next.
++
+ (* Expression evaluation with backtracking *)
+ 
+ let rec eval (e : expr) (cont : cont) (econt : econt) = 
+@@ -90,6 +95,15 @@ let rec eval (e : expr) (cont : cont) (econt : econt) =
+           econt
+     | And(e1, e2) -> 
+       eval e1 (fun _ -> fun econt1 -> eval e2 cont econt1) econt
++    | Random(min, max, num) ->
++      let rec generateRandoms i =
++          if i <= num then
++              let rand = randomNext(min, max)
++              cont (Int rand) (fun () -> generateRandoms (i+1))
++          else
++              econt ()
++
++      generateRandoms 1
+     | Or(e1, e2) -> 
+       eval e1 cont (fun () -> eval e2 cont econt)
+     | Seq(e1, e2) -> 
+\end{minted}
+
+Forneden ses det givne eksempel kørt 5 gange, hvor det bekræftes, at tilfældige tal genereres.
+
+\begin{minted}{fsharp}
+> open Icon;;
+> run (Every(Write(Random(1,10,3))));;
+5 7 2 val it : value = Int 0
+
+> run (Every(Write(Random(1,10,3))));;
+6 8 7 val it : value = Int 0
+
+> run (Every(Write(Random(1,10,3))));;
+10 1 8 val it : value = Int 0
+
+> run (Every(Write(Random(1,10,3))));;
+9 8 4 val it : value = Int 0
+
+> run (Every(Write(Random(1,10,3))));;
+3 8 6 val it : value = Int 0
+\end{minted}
+

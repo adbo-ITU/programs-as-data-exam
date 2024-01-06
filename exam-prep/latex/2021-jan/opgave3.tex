@@ -1,0 +1,285 @@
+\section{List–C: Tabeller på hoben}
+
+\subsection{Abstrakt syntaks}
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave3/ListC/Absyn.fs
++++ b/2021-jan/opgave3/ListC/Absyn.fs
+@@ -24,2 +24,3 @@ and expr =
+   | Prim2 of string * expr * expr    (* Binary primitive operator   *)
++  | Prim3 of string * expr * expr * expr
+   | Andalso of expr * expr           (* Sequential and              *)
+\end{minted}
+
+\begin{minted}{fsharp}
+> Stmt (Expr (Prim3 ("updateTable", Access (AccVar "t"), CstI 0, CstI 42)));;
+val it : stmtordec =
+  Stmt (Expr (Prim3 ("updateTable", Access (AccVar "t"), CstI 0, CstI 42)))
+\end{minted}
+
+\subsection{Lexer og parser}
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave3/ListC/CLex.fsl
++++ b/2021-jan/opgave3/ListC/CLex.fsl
+@@ -34,2 +34,6 @@ let keyword s =
+     | "setcdr"  -> SETCDR     
++    | "createTable" -> CREATETABLE
++    | "updateTable" -> UPDATETABLE
++    | "indexTable" -> INDEXTABLE
++    | "printTable" -> PRINTTABLE
+     | "true"    -> CSTBOOL 1
+
+--- a/2021-jan/opgave3/ListC/CPar.fsy
++++ b/2021-jan/opgave3/ListC/CPar.fsy
+@@ -17,2 +17,3 @@ let nl = CstI 10
+ %token CHAR ELSE IF INT NULL PRINT PRINTLN RETURN VOID WHILE
++%token CREATETABLE UPDATETABLE INDEXTABLE PRINTTABLE
+ %token NIL CONS CAR CDR DYNAMIC SETCAR SETCDR
+@@ -148,2 +149,6 @@ AtExprNotAccess:
+   | SETCDR LPAR Expr COMMA Expr RPAR        { Prim2("setcdr",$3,$5) }
++  | CREATETABLE LPAR Expr RPAR              { Prim1("createTable", $3)         }
++  | UPDATETABLE LPAR Expr COMMA Expr COMMA Expr RPAR { Prim3("updateTable", $3, $5, $7) }
++  | INDEXTABLE LPAR Expr COMMA Expr RPAR    { Prim2("indexTable", $3, $5)      }
++  | PRINTTABLE LPAR Expr RPAR               { Prim1("printTable", $3)          }
+ ;
+\end{minted}
+
+\begin{minted}{fsharp}
+$ mono listcc.exe exam10.lc
+List-C compiler v 1.0.0.0 of 2012-02-13
+Compiling exam10.lc to exam10.out
+Parsed: Prog
+  [Fundec
+     (None, "main", [],
+      Block
+        [Dec (TypD, "t");
+         Stmt (Expr (Assign (AccVar "t", Prim1 ("createTable", CstI 3))));
+         Stmt
+           (Expr (Prim3 ("updateTable", Access (AccVar "t"), CstI 0, CstI 42)));
+         Stmt
+           (Expr (Prim3 ("updateTable", Access (AccVar "t"), CstI 1, CstI 43)));
+         Stmt
+           (Expr (Prim3 ("updateTable", Access (AccVar "t"), CstI 2, CstI 44)));
+         Stmt
+           (Expr
+              (Prim1
+                 ("printi", Prim2 ("indexTable", Access (AccVar "t"), CstI 0))));
+         Stmt
+           (Expr
+              (Prim1
+                 ("printi", Prim2 ("indexTable", Access (AccVar "t"), CstI 1))));
+         Stmt
+           (Expr
+              (Prim1
+                 ("printi", Prim2 ("indexTable", Access (AccVar "t"), CstI 2))));
+         Stmt (Expr (Prim1 ("printTable", Access (AccVar "t"))))])]
+ERROR: unknown primitive 1
+\end{minted}
+
+\subsection{Implementering af bytekodefortolker}
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave3/ListC/ListVM/ListVM/listmachine.c
++++ b/2021-jan/opgave3/ListC/ListVM/ListVM/listmachine.c
+@@ -81,7 +81,7 @@ created when allocating all but the last word of a free block.
+   #define PPCOMP "Not compiled with gcc."
+ #endif
+ 
+-#if _WIN64 || __x86_64__ || __ppc64__
++#if _WIN64 || __x86_64__ || __ppc64__ || __aarch64__
+   #define ENV64
+   #define PPARCH "64 bit architecture."
+ #else
+@@ -151,6 +151,7 @@ word* readfile(char* filename);
+ #endif
+ 
+ #define CONSTAG 0
++#define TABLETAG 1
+ 
+ // Heap size in words
+ 
+@@ -195,6 +196,10 @@ word *freelist;
+ #define CDR 29
+ #define SETCAR 30
+ #define SETCDR 31
++#define CREATETABLE 32
++#define UPDATETABLE 33
++#define INDEXTABLE 34
++#define PRINTTABLE 35
+ 
+ #define STACKSIZE 1000
+ 
+@@ -237,6 +242,10 @@ void printInstruction(word p[], word pc) {
+   case CDR:    printf("CDR"); break;
+   case SETCAR: printf("SETCAR"); break;
+   case SETCDR: printf("SETCDR"); break;
++  case CREATETABLE: printf("CREATETABLE"); break;
++  case UPDATETABLE: printf("UPDATETABLE"); break;
++  case INDEXTABLE: printf("INDEXTABLE"); break;
++  case PRINTTABLE: printf("PRINTTABLE"); break;
+   default:     printf("<unknown>"); break;
+   }
+ }
+@@ -379,6 +388,63 @@ int execcode(word p[], word s[], word iargs[], int iargc, int /* boolean */ trac
+       word* p = (word*)s[sp];
+       p[2] = v;
+     } break;
++
++    case CREATETABLE: {
++      word N = Untag((word) s[sp--]);
++
++      if (N < 0) {
++        printf("Cannot create table with negative size\n");
++        return -1;
++      }
++
++      word* t = allocate(TABLETAG, N + 1, s, sp);
++
++      t[1] = N;
++      for (int i = 2; i <= N + 1; i++) {
++        t[i] = 0;
++      }
++
++      s[++sp] = (word) t;
++    } break;
++
++    case UPDATETABLE: {
++      word v = Untag((word) s[sp--]);
++      word i = Untag((word) s[sp--]);
++      word* t = (word*) s[sp];
++      word N = t[1];
++
++      if (i < 0 || i >= N) {
++        printf("Index %lld out of bounds\n", i);
++        return -1;
++      }
++
++      t[i + 2] = v;
++    } break;
++
++    case INDEXTABLE: {
++      word i = Untag((word) s[sp--]);
++      word* t = (word*) s[sp--];
++      word N = t[1];
++
++      if (i < 0 || i >= N) {
++        printf("Index %lld out of bounds\n", i);
++        return -1;
++      }
++
++      s[++sp] = Tag(t[i + 2]);
++    } break;
++    case PRINTTABLE: {
++      word* t = (word*) s[sp];
++      word N = t[1];
++
++      printf("[");
++      for (int i = 2; i < N + 1; i++)
++        printf("%lld, ", t[i]);
++      if (N > 0)
++        printf("%lld", t[N + 1]);
++      printf("]\n");
++    } break;
++
+     default:
+       printf("Illegal instruction " WORD_FMT " at address " WORD_FMT "\n",
+ 	     p[pc - 1], pc - 1);
+\end{minted}
+
+\subsection{Udvidelse af oversætteren}
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave3/ListC/Comp.fs
++++ b/2021-jan/opgave3/ListC/Comp.fs
+@@ -180,7 +180,9 @@ and cExpr (e : expr) (varEnv : varEnv) (funEnv : funEnv) : instr list =
+          | "printc" -> [PRINTC]
+          | "car"    -> [CAR]
+          | "cdr"    -> [CDR]
++         | "createTable" -> [CREATETABLE]
++         | "printTable" -> [PRINTTABLE]
+          | _        -> raise (Failure "unknown primitive 1"))
+     | Prim2(ope, e1, e2) ->
+       cExpr e1 varEnv funEnv
+       @ cExpr e2 varEnv funEnv
+@@ -199,7 +201,16 @@ and cExpr (e : expr) (varEnv : varEnv) (funEnv : funEnv) : instr list =
+          | "cons"   -> [CONS]
+          | "setcar" -> [SETCAR]
+          | "setcdr" -> [SETCDR]
++         | "indexTable" -> [INDEXTABLE]
+          | _        -> raise (Failure "unknown primitive 2"))
++    | Prim3(ope, e1, e2, e3) ->
++      cExpr e1 varEnv funEnv
++      @ cExpr e2 varEnv funEnv
++      @ cExpr e3 varEnv funEnv
++      @ (match ope with
++         | "updateTable" -> [UPDATETABLE]
++         | _        -> raise (Failure "unknown primitive 3"))
+     | Andalso(e1, e2) ->
+       let labend   = newLabel()
+       let labfalse = newLabel()
+
+--- a/2021-jan/opgave3/ListC/Machine.fs
++++ b/2021-jan/opgave3/ListC/Machine.fs
+@@ -47,6 +47,12 @@ type instr =
+   | CDR                                (* get second field of cons cell   *)
+   | SETCAR                             (* set first field of cons cell    *)
+   | SETCDR                             (* set second field of cons cell   *)
++  | CREATETABLE
++  | UPDATETABLE
++  | INDEXTABLE
++  | PRINTTABLE
+ 
+ (* Generate new distinct labels *)
+ 
+@@ -103,6 +109,10 @@ let CODECAR    = 28;
+ let CODECDR    = 29;
+ let CODESETCAR = 30;
+ let CODESETCDR = 31;
++let CODECREATETABLE = 32
++let CODEUPDATETABLE = 33
++let CODEINDEXTABLE = 34
++let CODEPRINTTABLE = 35
+ 
+ (* Bytecode emission, first pass: build environment that maps 
+    each label to an integer address in the bytecode.
+@@ -143,6 +153,10 @@ let makelabenv (addr, labenv) instr =
+     | CDR            -> (addr+1, labenv)
+     | SETCAR         -> (addr+1, labenv)
+     | SETCDR         -> (addr+1, labenv)
++    | CREATETABLE    -> (addr+1, labenv)
++    | UPDATETABLE    -> (addr+1, labenv)
++    | INDEXTABLE     -> (addr+1, labenv)
++    | PRINTTABLE     -> (addr+1, labenv)
+ 
+ (* Bytecode emission, second pass: output bytecode as integers *)
+ 
+@@ -181,6 +195,10 @@ let rec emitints getlab instr ints =
+     | CDR            -> CODECDR    :: ints
+     | SETCAR         -> CODESETCAR :: ints
+     | SETCDR         -> CODESETCDR :: ints
++    | CREATETABLE    -> CODECREATETABLE :: ints
++    | UPDATETABLE    -> CODEUPDATETABLE :: ints
++    | INDEXTABLE     -> CODEINDEXTABLE :: ints
++    | PRINTTABLE     -> CODEPRINTTABLE :: ints
+ 
+ 
+ (* Convert instruction list to int list in two passes:
+\end{minted}
+
+\subsection{Uddata}
+
+Ved kørsel af programmet fås:
+
+\begin{minted}{shell}
+$ mono listcc.exe exam10.lc
+List-C compiler v 1.0.0.0 of 2012-02-13
+Compiling exam10.lc to exam10.out
+
+$ gcc -Wall -g -o listmachine ./ListVM/ListVM/listmachine.c
+
+$ ./listmachine exam10.out
+42 43 44 [42, 43, 44]
+
+Used 0 cpu milli-seconds
+\end{minted}

@@ -1,0 +1,156 @@
+\section{MicroML: Doubles}
+
+\subsection{Abstrakt syntaks}
+
+Ændringen er som vist:
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave4/Fun/Absyn.fs
++++ b/2021-jan/opgave4/Fun/Absyn.fs
+@@ -4,6 +4,7 @@ module Absyn
+ 
+ type expr = 
+   | CstI of int
++  | CstD of double
+   | CstB of bool
+   | Var of string
+   | Let of string * expr * expr
+\end{minted}
+
+Den abstrakte syntaks \texttt{exam01} accepteres, som det vises her:
+
+\begin{minted}{fsharp}
+> open Absyn;;
+> Letfun("f1", "x", Prim("+", Var "x", CstD 1.0), Call(Var "f1", CstD 12.0));;
+val it : expr =
+  Letfun
+    ("f1", "x", Prim ("+", Var "x", CstD 1.0), Call (Var "f1", CstD 12.0))
+\end{minted}
+
+\subsection{Implementering}
+
+Ændringen er som vist:
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave4/Fun/HigherFun.fs
++++ b/2021-jan/opgave4/Fun/HigherFun.fs
+@@ -29,11 +29,13 @@ let rec lookup env x =
+ 
+ type value = 
+   | Int of int
++  | Double of double
+   | Closure of string * string * expr * value env (* (f, x, fBody, fDeclEnv) *)
+ 
+ let rec eval (e : expr) (env : value env) : value =
+     match e with
+     | CstI i -> Int i
++    | CstD d -> Double d
+     | CstB b -> Int (if b then 1 else 0)
+     | Var x  -> lookup env x
+     | Prim(ope, e1, e2) -> 
+@@ -45,6 +47,11 @@ let rec eval (e : expr) (env : value env) : value =
+       | ("-", Int i1, Int i2) -> Int (i1 - i2)
+       | ("=", Int i1, Int i2) -> Int (if i1 = i2 then 1 else 0)
+       | ("<", Int i1, Int i2) -> Int (if i1 < i2 then 1 else 0)
++      | ("*", Double d1, Double d2) -> Double (d1 * d2)
++      | ("+", Double d1, Double d2) -> Double (d1 + d2)
++      | ("-", Double d1, Double d2) -> Double (d1 - d2)
++      | ("=", Double d1, Double d2) -> Int (if d1 = d2 then 1 else 0)
++      | ("<", Double d1, Double d2) -> Int (if d1 < d2 then 1 else 0)
+       |  _ -> failwith "unknown primitive or wrong type"
+     | Let(x, eRhs, letBody) -> 
+       let xVal = eval eRhs env
+\end{minted}
+
+\texttt{value}-typen er udvidet, så vi kan processere kommatal. Abstrakt syntaks \texttt{CstD} oversættes direkte til en \texttt{Double}. Operationerne er det samme for kommatal som for heltal, blot med forskellige typer. Dog returneres et heltal stadig for \texttt{=} og \texttt{=}, fordi boolske værdier (1 og 0) er repræsenteret som heltal.
+\\\\
+Forneden vises kørsel af både \texttt{exam01} og \texttt{exam02Err}:
+
+\begin{minted}[breakanywhere]{fsharp}
+> open Absyn;;
+> open HigherFun;;
+> let exam01 = Letfun("f1", "x", Prim("+", Var "x", CstD 1.0), Call(Var "f1", CstD 12.0));- ;
+val exam01 : expr =
+  Letfun
+    ("f1", "x", Prim ("+", Var "x", CstD 1.0), Call (Var "f1", CstD 12.0))
+
+> eval exam01 [];;
+val it : value = Double 13.0
+
+> let exam02Err = Prim("+", CstD 23.0, CstI 1);;
+val exam02Err : expr = Prim ("+", CstD 23.0, CstI 1)
+
+> eval exam02Err [];;
+System.Exception: unknown primitive or wrong type
+  at FSI_0002.HigherFun.eval (FSI_0002.Absyn+expr e, Microsoft.FSharp.Collections.FSharpList`1[T] env) [0x00152] in <853e40332b7440d7bc75e1fda463f455>:0
+  at <StartupCode$FSI_0011>.$FSI_0011.main@ () [0x0000a] in <853e40332b7440d7bc75e1fda463f455>:0
+  at (wrapper managed-to-native) System.Reflection.RuntimeMethodInfo.InternalInvoke(System.Reflection.RuntimeMethodInfo,object,object[],System.Exception&)
+  at System.Reflection.RuntimeMethodInfo.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x0006a] in <b27839cc2dba4804baacf2f5cce6de32>:0
+Stopped due to error
+\end{minted}
+
+\subsection{Type casts}
+
+\begin{minted}{diff}
+--- a/2021-jan/opgave4/Fun/Absyn.fs
++++ b/2021-jan/opgave4/Fun/Absyn.fs
+@@ -11,2 +11,3 @@ type expr =
+   | Prim of string * expr * expr
++  | Prim1 of string * expr
+   | If of expr * expr * expr
+
+--- a/2021-jan/opgave4/Fun/HigherFun.fs
++++ b/2021-jan/opgave4/Fun/HigherFun.fs
+@@ -55,2 +55,8 @@ let rec eval (e : expr) (env : value env) : value =
+       |  _ -> failwith "unknown primitive or wrong type"
++    | Prim1(ope, e) ->
++      let v = eval e env
++      match (ope, v) with
++      | ("toInt", Double d) -> Int (int d)
++      | ("toDouble", Int i) -> Double (double i)
++      |  _ -> failwith "unknown unary primitive or wrong type"
+     | Let(x, eRhs, letBody) -> 
+\end{minted}
+
+\texttt{Prim1}-varianten er stort set den samme som \texttt{Prim}-varianten, men der evalueres kun 1 argument. Løsningen bruger F\#'s type-casts til at implementere de to nye primitiver og giver en fejl, hvis typerne er forkerte eller en ukendt primitiv er givet.
+\\\\
+Her ses det, at \texttt{exam05} korrekt evalueres til 46 samt at mit eget testeksempel fungerer:
+
+\begin{minted}{fsharp}
+> open Absyn;;
+> open HigherFun;;
+> let exam05 = Let("x",CstD 23.0, Prim("*",CstI 2,Prim1("toInt", Var "x")));;
+val exam05 : expr =
+  Let ("x", CstD 23.0, Prim ("*", CstI 2, Prim1 ("toInt", Var "x")))
+
+> eval exam05 [];;
+val it : value = Int 46
+
+> let testEx = Let ("x", CstI -100, Prim ("-", Prim1 ("toDouble", Var "x"),  CstD 2.0));;
+val testEx : expr =
+  Let ("x", CstI -100, Prim ("-", Prim1 ("toDouble", Var "x"), CstD 2.0))
+
+> eval testEx [];;
+val it : value = Double -102.0
+\end{minted}
+
+\subsection{Typeinferenstræ}
+
+\begin{figure}[H]
+    \hbox{\makebox[\textwidth][c]{
+    \begin{prooftree}
+        \infer0[(\textit{p1})]{\rho \vdash \texttt{34} : \texttt{int}}
+        \infer1[(\textit{toDouble})]{\rho \vdash \texttt{toDouble(34)} : \texttt{double}}
+        
+        \infer0[(\textit{p1})]{\rho \vdash \texttt{2} : \texttt{int}}
+
+        \infer0[(\textit{cstD})]{\rho \vdash \texttt{5.0} : \texttt{double}}
+        \infer1[(\textit{toInt})]{\rho \vdash \texttt{toInt(5.0)} : \texttt{int}}
+        
+        \infer2[(\textit{multI})]{\rho \vdash \texttt{2 * toInt(5.0)} : \texttt{int}}
+        \infer1[(\textit{toDouble})]{\rho \vdash \texttt{toDouble(2 * toInt(5.0))} : \texttt{double}}
+
+        \infer2[(\textit{multD})]{\rho \vdash \texttt{toDouble(34) * toDouble(2 * toInt(5.0))} : \texttt{double}}
+    \end{prooftree}
+    }}
+\end{figure}

@@ -1,0 +1,191 @@
+\section{Micro–C: Intervalcheck}
+
+\subsection{Lexer og parser}
+
+Jeg har ændret lexeren og parseren som vist nedenfor. \texttt{Absyn.fs} er udvidet med en type \texttt{Within}, der indeholder udtrykkene $e$, $e_1$ og $e_2$. Lexeren er udvidet, så strengen ``within'' oversættes til en \texttt{WITHIN}-token. Parseren er udvidet, så \texttt{WITHIN} har samme præcedens som andre logiske operatorer. Fordi den nye sprogfunktionalitet er et udtryk, er parser-reglen tiføjet som en del af \texttt{ExprNotAccess}.
+
+\begin{minted}{diff}
+--- a/2022-jan/opgave-3/MicroC/Absyn.fs
++++ b/2022-jan/opgave-3/MicroC/Absyn.fs
+@@ -14,6 +14,7 @@ type typ =
+   | TypP of typ                      (* Pointer type                *)
+                                                                    
+ and expr =                                                         
++  | Within of expr * expr * expr
+   | Access of access                 (* x    or  *p    or  a[e]     *)
+   | Assign of access * expr          (* x=e  or  *p=e  or  a[e]=e   *)
+   | Addr of access                   (* &x   or  &*p   or  &a[e]    *)
+
+--- a/2022-jan/opgave-3/MicroC/CLex.fsl
++++ b/2022-jan/opgave-3/MicroC/CLex.fsl
+@@ -16,6 +16,7 @@ let lexemeAsString lexbuf =
+ 
+ let keyword s =
+     match s with
++    | "within"  -> WITHIN
+     | "char"    -> CHAR 
+     | "else"    -> ELSE
+     | "false"   -> CSTBOOL 0
+
+--- a/2022-jan/opgave-3/MicroC/CPar.fsy
++++ b/2022-jan/opgave-3/MicroC/CPar.fsy
+@@ -16,7 +16,7 @@ let nl = CstI 10
+ 
+ %token CHAR ELSE IF INT NULL PRINT PRINTLN RETURN VOID WHILE
+ %token PLUS MINUS TIMES DIV MOD
+-%token EQ NE GT LT GE LE
++%token EQ NE GT LT GE LE WITHIN
+ %token NOT SEQOR SEQAND
+ %token LPAR RPAR LBRACE RBRACE LBRACK RBRACK SEMI COMMA ASSIGN AMP
+ %token EOF
+@@ -26,7 +26,7 @@ let nl = CstI 10
+ %left SEQOR
+ %left SEQAND
+ %left EQ NE 
+-%left GT LT GE LE
++%left GT LT GE LE WITHIN
+ %left PLUS MINUS
+ %left TIMES DIV MOD 
+ %nonassoc NOT AMP 
+@@ -117,6 +117,7 @@ ExprNotAccess:
+     AtExprNotAccess                           { $1                  }
+   | Access ASSIGN Expr                        { Assign($1, $3)      }
+   | NAME LPAR Exprs RPAR                      { Call($1, $3)        }  
++  | Expr WITHIN LBRACK Expr COMMA Expr RBRACK { Within($1, $4, $6)  }
+   | NOT Expr                                  { Prim1("!", $2)      }
+   | PRINT Expr                                { Prim1("printi", $2) }
+   | PRINTLN                                   { Prim1("printc", nl) }
+\end{minted}
+
+Ved at parse \texttt{within.c} med ovenstående ændringer fås følgende abstrakte syntakstræ:
+
+\begin{minted}[linenos]{fsharp}
+> open ParseAndComp;;
+> fromFile "within.c";;
+val it : Absyn.program =
+  Prog
+    [Fundec
+       (None, "main", [],
+        Block
+          [Stmt
+             (Expr
+                (Prim1
+                   ("printi",
+                    Within
+                      (CstI 0, Prim1 ("printi", CstI 1),
+                       Prim1 ("printi", CstI 2)))));
+           Stmt
+             (Expr
+                (Prim1
+                   ("printi",
+                    Within
+                      (CstI 3, Prim1 ("printi", CstI 1),
+                       Prim1 ("printi", CstI 2)))));
+           Stmt
+             (Expr
+                (Prim1
+                   ("printi",
+                    Prim1
+                      ("printi",
+                       Within
+                         (CstI 42, Prim1 ("printi", CstI 40),
+                          Prim1 ("printi", CstI 44))))));
+           Stmt
+             (Expr
+                (Prim1
+                   ("printi",
+                    Within
+                      (Prim1 ("printi", CstI 42), Prim1 ("printi", CstI 40),
+                       Prim1 ("printi", CstI 44)))))])]
+\end{minted}
+
+\subsection{Oversætterskema}
+
+Oversætterskemaet for \texttt{within} kan se således ud (med kommentarer til højre):
+
+\begin{align*}
+    \mathrm{E}[\![\ e\ \texttt{within [}&\,e_1 \texttt{,}\ e_2\,\texttt{]}\ ]\!] = \\
+    & \mathrm{E}[\![\ e \ ]\!]   && \text{Oversæt $e$ (med resultat $v$)} \\
+    & \mathrm{E}[\![\ e_1 \ ]\!] && \text{Oversæt $e_1$ (med resultat $v_1$)} \\
+    & \texttt{SWAP} && \text{Byt om på $v_1$ og $v$} \\
+    & \texttt{DUP}   && \text{Duplikér $v$} \\
+    & \mathrm{E}[\![\ e_2 \ ]\!]  && \text{Oversæt $e_2$ (med resultat $v_2$)} \\
+    & \texttt{SWAP; LT; NOT}  && \text{Tjek $v \leq v_2$} \\
+    & \texttt{IFZERO}\ \text{cleanup}  && \text{Hvis ikke $v \leq v_2$, fortsæt til oprydning} \\
+    & \texttt{SWAP; LT; NOT}  && \text{Tjek $v_1 \leq v$} \\
+    & \texttt{GOTO}\ \text{end}  && \text{Rutinen er færdig} \\
+    \text{cleanup:}\ & \texttt{INCSP -2}  && \text{Deallokér $v$ og $v_1$} \\
+    &\texttt{CSTI 0} && \text{Efterlad et 0 for at indikere false} \\
+    \text{end:}\ & \ldots  && \text{Rutinen er færdig}
+\end{align*}
+
+ Det første, der sikres i ovenstående oversætterskema er, at de tre udtryk bliver ekseveret i rækkefølgen $e$, $e_1$, $e_2$, som det er specificeret. Ved brug af \texttt{SWAP} og \texttt{DUP} kommer stakken til at se således ud efter de første fem linjer: $s, v_1, v, v, v_2$.
+ \\\\
+ Bytekodefortolkeren har ikke bytekode til direkte at lave et $<=$-tjek --- der er kun en kode til $<$. Fordi $\texttt{a <= b}$ er det samme sjom $\texttt{!(b < a)}$, kan vi beregne $\leq$ i bytekode med tre instruktioner i denne rækkefølge: \texttt{SWAP; LT; NOT}.
+ \\\\
+ Derefter tjekkes det, om $v \leq v_2$. Hvis det er falsk, udføres en oprydning: efter $\leq$-tjekket, er $v_1$ og $v$ stadig på stakken, og derfor bruges \texttt{INCSP -2} til at fjerne dem. Derefter efterlades 0 på toppen af stakken for at indikere, at $v_1 \leq v \leq v_2$ er falsk. Herefter er rutinen færdig.
+ \\\\
+ Hvis $v \leq v_2$ derimod er sandt, tjekkes det om $v_1 \leq v$ også er sandt. Fordi disse to værdier er de eneste af vores værdier tilbage på stakken, vil stakken blot indeholde et 1 eller 0 afhængigt af $v_1 \leq v$. Derfor hopper vi til \texttt{end}, idet der ikke er mere at gøre.
+ \\\\
+ Ovenstående opfylder de semantiske krav, fordi:
+ \begin{itemize}
+     \item De tre udtryk hver ekseveres præcis 1 gang
+     \item Udtrykkende eksekveres i rækkefølgen $e$, $e_1$, $e_2$
+     \item Der bliver efterladt enten et 1 eller 0 på stakken, og værdien er kun 1 hvis $v_1 \leq v \leq v_2$.
+ \end{itemize}
+
+\subsection{Implementering}
+
+Følgende diff viser ændringen til \texttt{Comp.fs}:
+
+\begin{minted}{diff}
+--- a/2022-jan/opgave-3/MicroC/Comp.fs
++++ b/2022-jan/opgave-3/MicroC/Comp.fs
+@@ -206,6 +206,21 @@ and cExpr (e : expr) (varEnv : varEnv) (funEnv : funEnv) : instr list =
+       @ cExpr e2 varEnv funEnv
+       @ [GOTO labend; Label labtrue; CSTI 1; Label labend]
+     | Call(f, es) -> callfun f es varEnv funEnv
++    | Within(e, e1, e2) ->
++        let labEnd = newLabel()
++        let labCleanup = newLabel()
++
++        cExpr e varEnv funEnv
++        @ cExpr e1 varEnv funEnv
++        @ [SWAP; DUP]
++        @ cExpr e2 varEnv funEnv
++        @ [SWAP; LT; NOT]
++        @ [IFZERO labCleanup]
++        @ [SWAP; LT; NOT]
++        @ [GOTO labEnd]
++        @ [Label labCleanup; INCSP -2; CSTI 0]
++        @ [Label labEnd]
+\end{minted}
+
+Koden er struktureret på samme måde som det foregående oversætterskema, og forklaringen dertil gælder ligeledes for ovenstående kode.
+\\\\
+Kompilerer man \texttt{within.c} og kører det igennem bytekodefortolkeren får man følgende uddata, som matcher det, der er givet af opgaven:
+
+\begin{minted}{shell}
+$ java Machine.java within.out
+1 2 0 1 2 0 40 44 1 1 42 40 44 1
+Ran 0.001 seconds
+\end{minted}
+
+For komplethedens skyld er den genererede bytekode indsat her:
+
+\begin{minted}{fsharp}
+> open ParseAndComp;;
+> compile "within";;
+val it : Machine.instr list =
+  [LDARGS; CALL (0, "L1"); STOP; Label "L1"; CSTI 0; CSTI 1; PRINTI; SWAP; DUP;
+   CSTI 2; PRINTI; SWAP; LT; NOT; IFZERO "L3"; SWAP; LT; NOT; GOTO "L2";
+   Label "L3"; INCSP -2; CSTI 0; Label "L2"; PRINTI; INCSP -1; CSTI 3; CSTI 1;
+   PRINTI; SWAP; DUP; CSTI 2; PRINTI; SWAP; LT; NOT; IFZERO "L5"; SWAP; LT;
+   NOT; GOTO "L4"; Label "L5"; INCSP -2; CSTI 0; Label "L4"; PRINTI; INCSP -1;
+   CSTI 42; CSTI 40; PRINTI; SWAP; DUP; CSTI 44; PRINTI; SWAP; LT; NOT;
+   IFZERO "L7"; SWAP; LT; NOT; GOTO "L6"; Label "L7"; INCSP -2; CSTI 0;
+   Label "L6"; PRINTI; PRINTI; INCSP -1; CSTI 42; PRINTI; CSTI 40; PRINTI;
+   SWAP; DUP; CSTI 44; PRINTI; SWAP; LT; NOT; IFZERO "L9"; SWAP; LT; NOT;
+   GOTO "L8"; Label "L9"; INCSP -2; CSTI 0; Label "L8"; PRINTI; INCSP -1;
+   INCSP 0; RET -1]
+\end{minted}

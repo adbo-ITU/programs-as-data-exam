@@ -1,0 +1,227 @@
+\section{Micro-C: Tupler}
+
+\subsection{Abstrakt syntaks}
+
+Kodeændringerne ser ud som følgende:
+
+\begin{minted}{diff}
+diff Absyn.fs
+@@ -14,2 +14,3 @@ type typ =
+   | TypP of typ                      (* Pointer type                *)
++  | TypT of typ * int option
+                                                                    
+@@ -30,2 +31,3 @@ and access =
+   | AccIndex of access * expr        (* Array indexing         a[e] *)
++  | TupIndex of access * expr
+\end{minted}
+
+Det bekræftes, at den abstrakte syntaks kan konstrueres i F\#-fortolkeren:
+
+\begin{minted}{fsharp}
+> open Absyn;;
+> TypT (TypI, Some 2);;
+val it : typ = TypT (TypI, Some 2)
+
+> TypT (TypI, None);;
+val it : typ = TypT (TypI, None)
+
+> TupIndex (AccVar "t1", CstI 0);;
+val it : access = TupIndex (AccVar "t1", CstI 0)
+\end{minted}
+
+\subsection{Lexer}
+
+Kodeændringerne ser ud som følgende for lexeren:
+
+\begin{minted}{diff}
+diff CLex.fsl
+@@ -74,2 +74,4 @@ rule Token = parse
+   | ']'             { RBRACK }
++  | "(|"            { LBARPAR }
++  | "|)"            { RBARPAR }
+   | ';'             { SEMI }
+\end{minted}
+
+Bemærk, at koden ikke kommer til at virke, før parseren er opdateret.
+
+\subsection{Parserspecifikation}
+
+Til første del er kodeændringen:
+
+\begin{minted}{diff}
+diff CPar.fsy
+@@ -21,2 +21,3 @@ let nl = CstI 10
+ %token LPAR RPAR LBRACE RBRACE LBRACK RBRACK SEMI COMMA ASSIGN AMP
++%token LBARPAR RBARPAR
+ %token EOF
+@@ -32,2 +33,3 @@ let nl = CstI 10
+ %nonassoc NOT AMP 
++%nonassoc LBARPAR
+ %nonassoc LBRACK          /* highest precedence  */
+@@ -63,2 +65,4 @@ Vardesc:
+   | Vardesc LBRACK CSTINT RBRACK    { compose1 (fun t -> TypA(t, Some $3)) $1 }
++  | Vardesc LBARPAR RBARPAR         { compose1 (fun t -> TypT(t, None)) $1    }
++  | Vardesc LBARPAR CSTINT RBARPAR  { compose1 (fun t -> TypT(t, Some $3)) $1 }
+ ;
+\end{minted}
+
+Følgende kommandolinje-udsnit viser, at lexer og parser kan bygges uden fejl, samt at eksemplerne parses som forventet.
+
+\begin{minted}{text}
+$ fslex --unicode CLex.fsl
+compiling to dfas (can take a while...)
+64 states
+writing output
+
+$ fsyacc --module CPar CPar.fsy
+        building tables
+computing first function...        time: 00:00:00.0633739
+building kernels...        time: 00:00:00.0500669
+building kernel table...        time: 00:00:00.0099092
+computing lookahead relations....................        time: 00:00:00.0534733
+building lookahead table...        time: 00:00:00.0179177
+building action table...        time: 00:00:00.0275403
+        building goto table...        time: 00:00:00.0052777
+        returning tables.
+        142 states
+        22 nonterminals
+        44 terminals
+        74 productions
+        #rows in action table: 142
+
+$ fsharpi ...
+...
+> open ParseAndComp;;
+> fromString "void main() {int t1(|2|);}";;
+val it : Absyn.program =
+  Prog [Fundec (None, "main", [], Block [Dec (TypT (TypI, Some 2), "t1")])]
+
+> fromString "void main() {int t1(||);}";;
+val it : Absyn.program =
+  Prog [Fundec (None, "main", [], Block [Dec (TypT (TypI, None), "t1")])]
+\end{minted}
+
+Til anden del er kodeændringen yderligere:
+
+\begin{minted}{diff}
+diff CPar.fsy
+@@ -153,2 +153,3 @@ Access:
+   | Access LBRACK Expr RBRACK           { AccIndex($1, $3)    }   
++  | Access LBARPAR Expr RBARPAR         { TupIndex($1, $3)    }
+\end{minted}
+
+Igen vises det, at lexer og parser kan bygges og køres uden fejl:
+
+\begin{minted}{text}
+$ fslex --unicode CLex.fsl
+compiling to dfas (can take a while...)
+64 states
+writing output
+
+$ fsyacc --module CPar CPar.fsy
+        building tables
+computing first function...        time: 00:00:00.0670778
+building kernels...        time: 00:00:00.0549343
+building kernel table...        time: 00:00:00.0115684
+computing lookahead relations....................        time: 00:00:00.0597363
+building lookahead table...        time: 00:00:00.0192274
+building action table...        time: 00:00:00.0300694
+        building goto table...        time: 00:00:00.0059809
+        returning tables.
+        145 states
+        22 nonterminals
+        44 terminals
+        75 productions
+        #rows in action table: 145
+
+$ fsharpi ...
+...
+> open ParseAndComp;;
+> fromString "void main() {t1(|0|) = 55;}";;
+val it : Absyn.program =
+  Prog
+    [Fundec
+       (None, "main", [],
+        Block [Stmt (Expr (Assign (TupIndex (AccVar "t1", CstI 0), CstI 55)))])]
+
+> fromString "void main() {print t1(|0|);}";;
+val it : Absyn.program =
+  Prog
+    [Fundec
+       (None, "main", [],
+        Block
+          [Stmt
+             (Expr (Prim1 ("printi", Access (TupIndex (AccVar "t1", CstI 0)))))])]
+\end{minted}
+
+\subsection{Udvidelse af oversætteren}
+
+Først kommer en forklaring af kodeændringerne, og derefter vises koden.
+\\\\
+Mine første ændringer er at tilføje flere match-betingelser, så man ikke kan allokere arrays af tupler, tupler af tupler, eller tupler af arrays. Således sikres det, at de opbevarede elementer hvert kun fylder 1 ord.
+\\\\
+Derefter implementeres allokering af tupler. Koden minder om koden til at allokere variable, men i stedet for at allokere 1 ord, allokeres $i$ ord, så der er plads til alle elementer. Dette er forskelligt fra arrays, der allokerer $i + 1$ ord, så der også er plads til en peger. Allokeringen sker ved, at variabelmiljøet opdateres, så det nye offset er $i$ højere. Derefter inkrementeres stakpegeren med $i$, så tuplens stakpladser ikke bliver overskrevet af efterfølgende instruktioner.
+\\\\
+\texttt{cAccess} er udvidet til at håndtere tupel-indeksering. Forskellen fra arrays er, at man ikke har en \texttt{LDI}-instruktion, efter stak-adressen for \texttt{acc} er beregnet. Grunden er, at \texttt{acc} for arrays svarer til en peger til første element --- men for tupler er \texttt{acc} allerede adressen på første element. Derfor er løsningen blot at fjerne \texttt{LDI} og plusse tuplens adresse med indekset.
+
+\begin{minted}{diff}
+diff Comp.fs
+@@ -71,4 +71,6 @@ let allocate (kind : int -> var) (typ, x) (varEnv : varEnv) : varEnv * instr lis
+     | TypA (TypA _, _) -> 
+       raise (Failure "allocate: array of arrays not permitted")
++    | TypA (TypT _, _) ->
++      raise (Failure "allocate: array of tuples not permitted")
+     | TypA (t, Some i) ->   
+@@ -76,4 +78,12 @@ let allocate (kind : int -> var) (typ, x) (varEnv : varEnv) : varEnv * instr lis
+       let code = [INCSP i; GETSP; CSTI (i-1); SUB]
+       (newEnv, code)
++    | TypT (TypA _, _) ->
++      raise (Failure "allocate: tuple of arrays not permitted")
++    | TypT (TypT _, _) ->
++      raise (Failure "allocate: tuple of tuples not permitted")
++    | TypT (t, Some i) ->
++      let newEnv = ((x, (kind fdepth, typ)) :: env, fdepth + i)
++      let code = [INCSP i]
++      (newEnv, code)
+     | _ -> 
+       let newEnv = ((x, (kind (fdepth), typ)) :: env, fdepth+1)
+@@ -220,4 +230,7 @@ and cAccess access varEnv funEnv : instr list =
+     | AccIndex(acc, idx) -> cAccess acc varEnv funEnv 
+                             @ [LDI] @ cExpr idx varEnv funEnv @ [ADD]
++    | TupIndex(acc, idx) -> cAccess acc varEnv funEnv
++                            @ cExpr idx varEnv funEnv
++                            @ [ADD]
+\end{minted}
+
+\subsection{Udklip og modifikation af kode}
+
+Jeg har forstået opgavebeskrivelsen som om, at man undervejs gerne må vise udklip af koden og forklare dem. Derfor har jeg gjort det, frem for at indsætte det hele under dette afsnit. Se tidligere afsnit.
+
+\subsection{Kørsel af programmet}
+
+Det dokumenteres, at programmet producerer det korrekte resultat:
+
+\begin{minted}{shell}
+$ java Machine.java tuple.out
+55 56 55 56
+Ran 0.001 seconds
+\end{minted}
+
+For komplethedens skyld demonstreres det også, at resultatet bliver gemt på stakken som forventet. \texttt{Machinetrace} viser, at præcis 2 pladser på stakken bruges på at opbevare tuplen (linje 4) --- altså allokeres der ikke for meget eller for lidt plads. De sidste par linjer viser, at værdien 55 bliver skrevet til første plads, samt at tuplens to pladser ikke bliver overskrevet, på nær ved \texttt{STI}-operationer.
+
+\begin{minted}{shell}
+$ java Machinetrace tuple.out
+[ ]{0: LDARGS}
+[ ]{1: CALL 0 5}
+[ 4 -999 ]{5: INCSP 2}
+[ 4 -999 0 0 ]{7: GETBP}
+[ 4 -999 0 0 2 ]{8: CSTI 0}
+[ 4 -999 0 0 2 0 ]{10: ADD}
+[ 4 -999 0 0 2 ]{11: CSTI 0}
+[ 4 -999 0 0 2 0 ]{13: ADD}
+[ 4 -999 0 0 2 ]{14: CSTI 55}
+[ 4 -999 0 0 2 55 ]{16: STI}
+[ 4 -999 55 0 55 ]{17: INCSP -1}
+[ 4 -999 55 0 ]{19: GETBP}
+...
+\end{minted}

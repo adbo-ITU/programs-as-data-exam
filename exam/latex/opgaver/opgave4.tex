@@ -1,0 +1,240 @@
+\section{Micro-ML: Lists}
+
+\subsection{Lexer og parser}
+
+Ændringerne er som følgende:
+
+\begin{enumerate}
+    \item \texttt{List}-typen er tilføjet til den abstrakte syntaks.
+    \item De nye tokens er tilføjet til lexeren og parseren.
+    \item \texttt{@} er givet samme associativitet og præcedens som \texttt{+}.
+    \item Der er tilføjet en simpel grammatikregel, der genkender \texttt{Expr @ Expr}.
+    \item Der er tilføjet en regel til at genkende lister. Den starter med \texttt{LBRACK ListItems RBRACK}, hvor \texttt{ListItems} er defineret længere nede. Reglen genkender ikke-tomme lister, fordi den altid som minimum har én \texttt{Expr}. Hvis den har flere, bruger reglen rekursivt sig selv til at parse kommaseparerede udtryk. Fordi ``kaldet'' til den rekursive regel er på højre side, bliver listen parset venstre-til-højre, og elementerne kommer derfor i den rigtige rækkefølge.
+\end{enumerate}
+
+I kode er ændringerne:
+
+\begin{minted}{diff}
+diff Absyn.fs
+@@ -6,4 +6,5 @@ type expr =
+   | CstI of int
+   | CstB of bool
++  | List of expr list
+   | Var of string
+   | Let of string * expr * expr
+
+diff FunLex.fsl
+@@ -56,4 +56,8 @@ rule Token = parse
+   | '('             { LPAR }
+   | ')'             { RPAR }
++  | '['             { LBRACK }
++  | ']'             { RBRACK }
++  | '@'             { AT }
++  | ','             { COMMA }
+   | eof             { EOF }
+   | _               { failwith "Lexer error: illegal symbol" }
+
+diff FunPar.fsy
+@@ -15,5 +15,6 @@
+ %token PLUS MINUS TIMES DIV MOD
+ %token EQ NE GT LT GE LE
+ %token LPAR RPAR
++%token LBRACK RBRACK COMMA AT
+ %token EOF
+ 
+@@ -21,5 +22,5 @@
+ %left EQ NE 
+ %left GT LT GE LE
+-%left PLUS MINUS
++%left PLUS MINUS AT
+ %left TIMES DIV MOD 
+ %nonassoc NOT           /* highest precedence  */
+@@ -28,4 +29,5 @@
+ %type <Absyn.expr> Main Expr AtExpr Const
+ %type <Absyn.expr> AppExpr
++%type <Absyn.expr list> ListItems
+ 
+ %%
+@@ -51,4 +53,5 @@ Expr:
+   | Expr GE    Expr                     { Prim(">=", $1, $3)     }
+   | Expr LE    Expr                     { Prim("<=", $1, $3)     }
++  | Expr AT    Expr                     { Prim("@",  $1, $3)     }
+ ;
+ 
+@@ -58,7 +61,13 @@ AtExpr:
+   | LET NAME EQ Expr IN Expr END        { Let($2, $4, $6)        }
+   | LET NAME NAME EQ Expr IN Expr END   { Letfun($2, $3, $5, $7) }
++  | LBRACK ListItems RBRACK             { List($2)               }
+   | LPAR Expr RPAR                      { $2                     }
+ ;
+ 
++ListItems:
++    Expr COMMA ListItems { $1 :: $3 }
++  | Expr                 { [$1]     }
++;
++
+ AppExpr:
+     AtExpr AtExpr                       { Call($1, $2)           }
+\end{minted}
+
+Alle eksemplerne fra opgaven (\texttt{ex01}-\texttt{ex06}) er testet, og de giver alle det forventede resultat:
+
+\begin{description}
+    \item[\texttt{ex01}]
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString @"let l1 = [2, 3] in
+            -   let l2 = [1, 4] in
+            -     l1 @ l2 = [2, 3, 1, 4]
+            -   end
+            - end";;
+            val it : Absyn.expr =
+              Let
+                ("l1", List [CstI 2; CstI 3],
+                 Let
+                   ("l2", List [CstI 1; CstI 4],
+                    Prim
+                      ("=", Prim ("@", Var "l1", Var "l2"),
+                       List [CstI 2; CstI 3; CstI 1; CstI 4])))
+        \end{minted}
+    \item[\texttt{ex02}]
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let l = [] in l end";;
+            System.Exception: parse error near line 1, column 10
+              at Microsoft.FSharp.Core.PrintfModule+PrintFormatToStringThenFail@1433[TResult].Invoke (System.String message) [0x00000] in <b56f33d2f53c2e7533e6754e4d8591b5>:0
+              at FSI_0002.Parse.fromString (System.String str) [0x0009a] in <c1a46470212049aa91eab2ba84025ea4>:
+        \end{minted}
+    \item[\texttt{ex03}]
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let l = [43] in l @ [3+4] end";;
+            val it : Absyn.expr =
+              Let
+                ("l", List [CstI 43],
+                 Prim ("@", Var "l", List [Prim ("+", CstI 3, CstI 4)]))
+        \end{minted}
+    \item[\texttt{ex04}]
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let l = [3] in l @ [3] = [3+4] end";;
+            val it : Absyn.expr =
+              Let
+                ("l", List [CstI 3],
+                 Prim
+                   ("=", Prim ("@", Var "l", List [CstI 3]),
+                    List [Prim ("+", CstI 3, CstI 4)]))
+        \end{minted}
+    \item[\texttt{ex05}]
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let f x = x+1 in [f] end";;
+            val it : Absyn.expr =
+              Letfun ("f", "x", Prim ("+", Var "x", CstI 1), List [Var "f"])
+        \end{minted}
+    \item[\texttt{ex06}]
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let id x = x in [id] end";;
+            val it : Absyn.expr = Letfun ("id", "x", Var "x", List [Var "id"])
+        \end{minted}
+\end{description}
+
+\subsection{Implementering af fortolker}
+
+Ændringerne er som følgende:
+
+\begin{enumerate}
+    \item Typen \texttt{ListV} er tilføjet. Internt holder den på en F\#-liste af værdier.
+    \item Når fortolkeren støder på en \texttt{List}, kører den alle listens udtryk igennen, evaluerer dem, og danner en \texttt{ListV} med resultaterne jf. evalueringsreglen \textit{list}.
+    \item Ved den primitive operation \texttt{@}, matches der på 2 liste-argumenter. Her sikrer typerne i matchet, at kun 2 lister kan sammensættes. Internt bruges F\#'s egen \texttt{@}, der selv opfylder evalueringsreglen \textit{@}.
+    \item Ved den primitive operation \texttt{=}, matches der på 2 liste-argumenter. Her sikrer typerne i matchet, at 2 lister kan sammenlignes (man kan for eksempel ikke sammenligne en liste med et tal ifølge evalueringsreglerne). Igen bruges F\#'s egen sammenligningsoperator \texttt{=}, som opfylder regel \textit{=T} og \textit{=F}.
+\end{enumerate}
+
+Koden er vist nedenfor.
+
+\begin{minted}{diff}
+diff HigherFun.fs
+@@ -31,4 +31,5 @@ type value =
+   | Int of int
+   | Closure of string * string * expr * value env       (* (f, x, fBody, fDeclEnv) *)
++  | ListV of value list
+ 
+ let rec eval (e : expr) (env : value env) : value =
+@@ -36,4 +37,5 @@ let rec eval (e : expr) (env : value env) : value =
+     | CstI i -> Int i
+     | CstB b -> Int (if b then 1 else 0)
++    | List l -> l |> List.map (fun e' -> eval e' env) |> ListV
+     | Var x  -> lookup env x
+     | Prim(ope, e1, e2) -> 
+@@ -46,4 +48,6 @@ let rec eval (e : expr) (env : value env) : value =
+       | ("=", Int i1, Int i2) -> Int (if i1 = i2 then 1 else 0)
+       | ("<", Int i1, Int i2) -> Int (if i1 < i2 then 1 else 0)
++      | ("@", ListV l1, ListV l2) -> ListV (l1 @ l2)
++      | ("=", ListV l1, ListV l2) -> Int (if l1 = l2 then 1 else 0)
+       |  _ -> failwith "unknown primitive or wrong type"
+     | Let(x, eRhs, letBody) -> 
+\end{minted}
+
+Alle tests fra opgaven er testet igen med \texttt{run}. Til hvert test er tilknyttet en kommentar, der forklarer, hvorfor resultatet er korrekt.
+
+\begin{description}
+    \item[\texttt{ex01}] Sammensætningen af \texttt{[2, 3]} og \texttt{[1, 4]} bliver til listen \texttt{[2, 3, 1, 4]}. Programmet evalueres til \texttt{1} (sand), hvilket er forventet.
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString @"let l1 = [2, 3] in
+            -   let l2 = [1, 4] in
+            -     l1 @ l2 = [2, 3, 1, 4]
+            -   end
+            - end" |> run;;
+            val it : HigherFun.value = Int 1
+        \end{minted}
+    \item[\texttt{ex02}] Parseren fejler som forventet stadig.
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let l = [] in l end" |> run;;
+            System.Exception: parse error near line 1, column 10
+              at Microsoft.FSharp.Core.PrintfModule+PrintFormatToStringThenFail@1433[TResult].Invoke (System.String message) [0x00000] in <b56f33d2f53c2e7533e6754e4d8591b5>:0
+              at FSI_0002.Parse.fromString (System.String str) [0x0009a] in <2700d72b466e4c8e82c56e4c7d92bdac>:0
+        \end{minted}
+    \item[\texttt{ex03}] Sammensætningen af \texttt{[43]} og \texttt{[3+4]} bør blive til listen \texttt{[43, 7]}, hvilket programmet outputter. Dette eksempel bekræftes også.
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let l = [43] in l @ [3+4] end" |> run;;
+            val it : HigherFun.value = ListV [Int 43; Int 7]
+        \end{minted}
+    \item[\texttt{ex04}] Sammensætningen af \texttt{[3]} og \texttt{[3]} bliver til listen \texttt{[3, 3]}, hvilket ikke er det samme som \texttt{[7]}. Programmet outputter derfor korrekt 0 (falsk).
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let l = [3] in l @ [3] = [3+4] end" |> run;;
+            val it : HigherFun.value = Int 0
+        \end{minted}
+    \item[\texttt{ex05}] \texttt{f} er en closure, der ikke er kaldt endnu, når den indsættes i listen. Det er derfor korrekt, at resultatet er en liste med en closure som element.
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            > fromString "let f x = x+1 in [f] end" |> run;;
+            val it : HigherFun.value =
+              ListV [Closure ("f", "x", Prim ("+", Var "x", CstI 1), [])]
+        \end{minted}
+    \item[\texttt{ex06}] Samme som ovenstående.
+        \begin{minted}[breakanywhere, autogobble, linenos=false]{fsharp}
+            fromString "let id x = x in [id] end" |> run;;
+            val it : HigherFun.value = ListV [Closure ("id", "x", Var "x", [])]
+        \end{minted}
+\end{description}
+
+\subsection{Typetræ}
+
+Nedenfor er et typetræ til udtrykket \texttt{let x = [43] in x @ [3+4] end} udformet. Reglerne med præfiks \textit{p} henviser til typereglerne på Figur 6.1 i Peter Sestofts \textit{Programming Language Concepts}.
+\\\\
+Bemærk, at jeg har brugt syntaksen $\rho' = \rho [\texttt{x} \mapsto \texttt{int list}] \vdash \ldots$ til at definere $\rho'$ som alias for $\rho [\texttt{x} \mapsto \texttt{int list}]$. Det er gjort for at få træet til at fylde mindre på siden.
+
+\begin{figure}[H]
+    \hbox{\makebox[\textwidth][c]{
+    \begin{prooftree}
+        \infer0[(\textit{p1})]{\rho \vdash \texttt{43}\ :\ \texttt{int}}
+        \infer1[(\textit{list})]{\rho \vdash \texttt{[43]}\ :\ \texttt{int list}}
+
+        \hypo{\rho'(\texttt{x})\ =\ \texttt{int list}}
+        \infer1[(\textit{p3})]{\rho' \vdash \texttt{x}\ :\ \texttt{int list}}
+
+        \infer0[(\textit{p1})]{\rho' \vdash \texttt{3}\ :\ \texttt{int}}
+        \infer0[(\textit{p1})]{\rho' \vdash \texttt{4}\ :\ \texttt{int}}
+        \infer2[(\textit{p4})]{\rho' \vdash \texttt{3+4}\ :\ \texttt{int}}
+        \infer1[(\textit{list})]{\rho' \vdash \texttt{[3+4]}\ :\ \texttt{int list}}
+
+        \infer2[(\textit{@})]{\rho' = \rho [\texttt{x} \mapsto \texttt{int list}] \vdash \texttt{x @ [3+4]}\ :\ \texttt{int list}}
+
+        \infer2[(\textit{p6})]{\rho \vdash \texttt{let x = [43] in x @ [3+4] end}\ :\ \texttt{int list}}
+    \end{prooftree}
+    }}
+\end{figure}
